@@ -9,6 +9,18 @@
 </head>
 
 <body>
-    <div id="interaction"></div>
-    <div id="phases"></div>
+    <div id="interaction">
+        <button id="next-phase" onclick="nextPhase()">Next phase</button>
+    </div>
+    <div id="phase">
+        <h2 id="phase-title"></h2>
+        <h3>Species</h3>
+        <div id="species">
+
+        </div>
+    </div>
+    <div id="log-container" onclick="showHideLog()">
+        <h3 id="log-title">Log -</h3>
+        <div id="log"></div>
+    </div>
 </body>

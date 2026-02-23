@@ -1,7 +1,7 @@
-const hunger = ["fed", "hungry", "very hungry"];
+const hungerLabels = ["🟢", "🟡", "🔴"];
 
 class Individual {
-    id: number;
+    id: string;
     hunger: number;
     shelter = false;
     eaten = false;
@@ -11,14 +11,30 @@ class Individual {
     constructor(species: Species) {
         this.species = species;
 
-        this.id = this.species.maxIndividualId;
+        this.id = this.species.id + this.species.maxIndividualId;
         this.species.maxIndividualId++;
 
         this.hunger = species.defaultHunger;
     }
 
     toString() {
-        return `${this.species.id}${this.id} ${this.species.getTraitsString()} (${hunger[this.hunger]} and ${this.shelter ? "sheltered" : "exposed"})`;
+        return `${this.id} (${this.species.getTraitsString()})`;
+    }
+
+    statusString(): string {
+        return `${hungerLabels[this.hunger]}${this.shelter ? "🛡️" : "👁️"}`;
+    }
+
+    canBeEatenBy(predator: Species): boolean {
+        if (this.eaten) {
+            return false;
+        }
+
+        if (this.shelter) {
+            return false;
+        }
+
+        return this.species.canBeEatenBy(predator);
     }
 }
 
@@ -32,14 +48,8 @@ class Species {
     defaultHunger = 1;
     individuals: Individual[];
 
-    constructor(player: Player) {
-        this.id = player.maxSpeciesId;
-        player.maxSpeciesId = String.fromCharCode(player.maxSpeciesId.charCodeAt(0) + 1);
-        if (player.maxSpeciesId > "Z" && player.maxSpeciesId < "a") {
-            player.maxSpeciesId = "a";
-        } else if (player.maxSpeciesId > "z") {
-            throw new Error("Too many species");
-        }
+    constructor(state: State) {
+        this.id = state.nextSpeciesId();
 
         this.individuals = [new Individual(this)];
     }
@@ -53,21 +63,25 @@ class Species {
 
         var label = "";
         for (let trait of this.traits) {
-            label += ` ${trait}`;
+            label += `${trait} `;
         }
 
         if (this.diet == undefined) {
-            label += " herbivore";
+            label += "herbivore";
         } else {
-            label += ` ${this.diet}`;
+            label += `${this.diet}`;
         }
 
         return label;
     }
 
-    toString() {
+    getIndividualsAndTraitsString(): string {
         const plural = this.aliveIndividuals() != 1 ? 's' : '';
-        return `${this.aliveIndividuals().toString()} ${this.getTraitsString()}${plural} ${this.id}`;
+        return `${this.aliveIndividuals().toString()} ${this.getTraitsString()}${plural}`;
+    }
+
+    toString() {
+        return `${this.id} (${this.getIndividualsAndTraitsString()})`;
     }
 
     getTraitOrDietCount(): number {
@@ -109,16 +123,7 @@ class Species {
         return true;
     }
 
-
-    canBeEatenBy(individual: Individual, predator: Species): boolean {
-        if (individual.shelter) {
-            return false;
-        }
-
-        if (this.traits.includes(Trait.BURROWING) && individual.hunger == 0) {
-            return false;
-        }
-
+    canBeEatenBy(predator: Species): boolean {
         if (this.traits.includes(Trait.SWIMMING) && !predator.traits.includes(Trait.SWIMMING)) {
             return false;
         }

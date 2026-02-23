@@ -1,57 +1,68 @@
-function nextPhase() {
-    display(state);
-    switch (state.phase) {
-        case Phase.Extinction:
-            state.phase = Phase.Development;
-            state = doDevelopment();
-            break;
-        case Phase.Development:
-            state.phase = Phase.Feeding;
-            state = doFeeding();
-            break;
-        case Phase.Feeding:
-            state.phase = Phase.Extinction;
-            state = doExtinction();
-            break;
-    }
-}
+var didNewSpecies = 0;
+var didAddTraitOrDiet = 0;
+var didExtraIndividual = 0;
 function doDevelopment() {
-    for (let player of state.players) {
-        doDevelopmentForPlayer(player);
-    }
-    return state;
-}
-function doDevelopmentForPlayer(player) {
     var actions = 2;
-    for (let species of player.species) {
+    for (let species of state.species) {
         actions += species.aliveIndividuals();
     }
+    clearLog();
+    log(actions + " development actions");
+    didNewSpecies = 0;
+    didAddTraitOrDiet = 0;
+    didExtraIndividual = 0;
     while (actions > 0) {
         actions--;
         const action = Math.random();
-        const noSpecies = player.species.length === 0;
-        const underdevelopedSpecies = player.species.map((species, index) => species.getTraitOrDietCount() < 3 ? index : -1).filter(index => index >= 0);
-        const anyUnderdeveloped = underdevelopedSpecies.length > 0;
-        if (action < 1 / 3 || noSpecies) {
-            player.species.push(new Species(player));
+        const noSpecies = state.species.length === 0;
+        const underdevelopedSpeciesIndices = state.species.map((species, index) => species.getTraitOrDietCount() < 3 ? index : -1).filter(index => index >= 0);
+        const anyUnderdeveloped = underdevelopedSpeciesIndices.length > 0;
+        const noLonelyIndividuals = state.species.every(species => species.aliveIndividuals() > 1);
+        if (action < 1 / 4 || noSpecies) {
+            newSpecies();
         }
-        else if (action < 2 / 3 && anyUnderdeveloped) {
-            var traitOrDiet = getRandomTraitOrDiet();
-            var chosenSpecies = underdevelopedSpecies[Math.floor(Math.random() * underdevelopedSpecies.length)];
-            var added = false;
-            while (!added && chosenSpecies < player.species.length) {
-                added = player.species[chosenSpecies].addTraitOrDiet(traitOrDiet);
-                chosenSpecies++;
-            }
-            if (!added) {
-                player.species.push(new Species(player));
-            }
+        else if (action < 3 / 4 && anyUnderdeveloped && noLonelyIndividuals) {
+            addTraitOrDiet(underdevelopedSpeciesIndices);
         }
         else {
-            player.species[Math.floor(Math.random() * player.species.length)].addIndividual();
+            extraIndividual();
         }
     }
-    state.climate = new Climate();
+    if (didNewSpecies > 0) {
+        log(`${didNewSpecies} new species`);
+    }
+    if (didAddTraitOrDiet > 0) {
+        log(`${didAddTraitOrDiet} added traits or diets`);
+    }
+    if (didExtraIndividual > 0) {
+        log(`${didExtraIndividual} extra individuals`);
+    }
+}
+function newSpecies() {
+    const newSpecies = new Species(state);
+    state.species.push(newSpecies);
+    didNewSpecies++;
+}
+function extraIndividual() {
+    const chosenSpecies = state.species[Math.floor(Math.random() * state.species.length)];
+    chosenSpecies.addIndividual();
+    didExtraIndividual++;
+}
+function addTraitOrDiet(underdevelopedSpeciesIndices) {
+    var traitOrDiet = getRandomTraitOrDiet();
+    var chosenSpeciesIndex = underdevelopedSpeciesIndices[Math.floor(Math.random() * underdevelopedSpeciesIndices.length)];
+    var chosenSpecies = state.species[chosenSpeciesIndex];
+    var added = false;
+    while (!added && chosenSpeciesIndex < state.species.length) {
+        added = state.species[chosenSpeciesIndex].addTraitOrDiet(traitOrDiet);
+        chosenSpeciesIndex++;
+    }
+    if (added) {
+        didAddTraitOrDiet++;
+    }
+    else {
+        newSpecies();
+    }
 }
 class Action {
     individual;
@@ -60,21 +71,26 @@ class Action {
     }
 }
 class HideAction extends Action {
-    toString() {
-        return `HIDE: ${this.individual}`;
-    }
     execute() {
         this.individual.shelter = true;
         state.climate.shelter--;
+        log(`${this.individual.id} 🛡️ -> ${this.individual.statusString()}`);
+        if (state.climate.shelter == 0) {
+            log("0 shelter remaining");
+        }
     }
 }
 class GatherAction extends Action {
-    toString() {
-        return `GATHER: ${this.individual}`;
-    }
     execute() {
         this.individual.hunger--;
+        if (this.individual.species.traits.includes(Trait.BURROWING) && this.individual.hunger == 0) {
+            this.individual.shelter = true;
+        }
         state.climate.food--;
+        log(`${this.individual.id} 🥕 -> ${this.individual.statusString()}`);
+        if (state.climate.food == 0) {
+            log("0 food remaining");
+        }
     }
 }
 class HuntAction extends Action {
@@ -83,109 +99,172 @@ class HuntAction extends Action {
         super(individual);
         this.victim = victim;
     }
-    toString() {
-        return `HUNT: ${this.individual} (EATING ${this.victim})`;
-    }
     execute() {
-        this.individual.hunger--;
+        this.individual.hunger -= this.victim.species.defaultHunger;
+        if (this.individual.hunger < 0) {
+            this.individual.hunger = 0;
+        }
+        if (this.individual.species.traits.includes(Trait.BURROWING) && this.individual.hunger == 0) {
+            this.individual.shelter = true;
+        }
         this.victim.eaten = true;
+        log(`${this.individual.id} 🍗 ${this.victim.id} -> ${this.individual.statusString()}`);
+        this.triggerScavanger();
+    }
+    triggerScavanger() {
+        for (let species of state.species) {
+            if (species.diet == Diet.SCAVENGER) {
+                for (let individual of species.individuals) {
+                    if (!individual.eaten && individual.hunger > 0) {
+                        individual.hunger--;
+                        if (individual.species.traits.includes(Trait.BURROWING) && individual.hunger == 0) {
+                            individual.shelter = true;
+                        }
+                        log(` ${individual.id} 🦴 ${this.victim.id} -> ${individual.statusString()}`);
+                        return;
+                    }
+                }
+            }
+        }
     }
 }
 function doFeeding() {
+    actions();
+    return doExtinction();
+}
+function actions() {
+    const dietCounts = {};
+    var herbivores = 0;
+    for (let species of state.species) {
+        if (species.diet) {
+            dietCounts[species.diet] = (dietCounts[species.diet] || 0) + 1;
+        }
+        else {
+            herbivores++;
+        }
+    }
+    var diets = [];
+    if (herbivores > 0) {
+        diets.push(`${herbivores} herbivore${herbivores > 1 ? "s" : ""}`);
+    }
+    if (dietCounts[Diet.CARNIVORE]) {
+        diets.push(`${dietCounts[Diet.CARNIVORE]} carnivore${dietCounts[Diet.CARNIVORE] > 1 ? "s" : ""}`);
+    }
+    if (dietCounts[Diet.OMNIVORE]) {
+        diets.push(`${dietCounts[Diet.OMNIVORE]} omnivore${dietCounts[Diet.OMNIVORE] > 1 ? "s" : ""}`);
+    }
+    if (dietCounts[Diet.SCAVENGER]) {
+        diets.push(`${dietCounts[Diet.SCAVENGER]} scavenger${dietCounts[Diet.SCAVENGER] > 1 ? "s" : ""}`);
+    }
+    log(diets.join(", "));
+    state.climate = new Climate();
+    log(`${state.climate.food} food, ${state.climate.shelter} shelter`);
     // reset hunger and shelter
-    for (let player of state.players) {
-        for (let species of player.species) {
-            for (let individual of species.individuals) {
-                individual.hunger = species.defaultHunger;
-                individual.shelter = false;
+    for (let species of state.species) {
+        for (let individual of species.individuals) {
+            individual.hunger = species.defaultHunger;
+            individual.shelter = false;
+        }
+    }
+    var allIndividuals = state.species.flatMap(species => species.individuals.map(individual => [species, individual]));
+    var active = true;
+    while (active) {
+        active = false;
+        // shuffle allIndividuals
+        for (let i = allIndividuals.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [allIndividuals[i], allIndividuals[j]] = [allIndividuals[j], allIndividuals[i]];
+        }
+        for (const [species, individual] of allIndividuals) {
+            if (act(species, individual)) {
+                active = true;
             }
         }
     }
-    var activity = true;
-    while (activity) {
-        activity = false;
-        for (var i = 0; i < state.players.length; i++) {
-            console.log(`Player ${i + 1} is taking actions`);
-            var possibleActions = [];
-            for (let species of state.players[i].species) {
-                for (let individual of species.individuals) {
-                    if (individual.eaten) {
+    if (state.climate.food > 0) {
+        log(`${state.climate.food} food remaining`);
+    }
+    if (state.climate.shelter > 0) {
+        log(`${state.climate.shelter} shelter remaining`);
+    }
+}
+function act(species, individual) {
+    if (individual.eaten) {
+        return false;
+    }
+    const possibleActions = [];
+    if (!individual.shelter && state.climate.shelter > 0) {
+        possibleActions.push(new HideAction(individual));
+    }
+    if (individual.hunger > 0) {
+        const canHunt = species.diet === Diet.CARNIVORE || species.diet === Diet.OMNIVORE;
+        const canGather = species.diet != Diet.CARNIVORE;
+        if (canHunt) {
+            const victims = [];
+            const sameSpeciesVictims = [];
+            for (let victimSpecies of state.species) {
+                for (let victimIndividual of victimSpecies.individuals) {
+                    // can't eat itself
+                    if (individual.id === victimIndividual.id) {
                         continue;
                     }
-                    if (!individual.shelter && state.climate.shelter > 0) {
-                        possibleActions.push(new HideAction(individual));
-                    }
-                    if (individual.hunger > 0) {
-                        const canHunt = species.diet === Diet.CARNIVORE || species.diet === Diet.OMNIVORE;
-                        const canGather = species.diet != Diet.CARNIVORE;
-                        if (canHunt) {
-                            const victims = [];
-                            for (let victimPlayer of state.players) {
-                                for (let victimSpecies of victimPlayer.species) {
-                                    for (let victimIndividual of victimSpecies.individuals) {
-                                        // TODO: does this check really work?
-                                        if (individual == victimIndividual) {
-                                            // can't eat itself
-                                            continue;
-                                        }
-                                        if (species.canBeEatenBy(victimIndividual, species)) {
-                                            victims.push(victimIndividual);
-                                        }
-                                    }
-                                }
-                            }
-                            if (victims.length > 0) {
-                                const victim = victims[Math.floor(Math.random() * victims.length)];
-                                possibleActions.push(new HuntAction(individual, victim));
-                            }
+                    if (victimIndividual.canBeEatenBy(species)) {
+                        if (victimSpecies == species) {
+                            sameSpeciesVictims.push(victimIndividual);
                         }
-                        if (canGather && state.climate.food > 0) {
-                            possibleActions.push(new GatherAction(individual));
+                        else {
+                            victims.push(victimIndividual);
                         }
                     }
                 }
             }
-            if (possibleActions.length > 0) {
-                const action = possibleActions[Math.floor(Math.random() * possibleActions.length)];
-                for (let possibleAction of possibleActions) {
-                    if (possibleAction == action) {
-                        console.log("DOING -", possibleAction.toString());
-                    }
-                    else {
-                        console.log("NOT -", possibleAction.toString());
-                    }
-                }
-                action.execute();
-                activity = true;
+            if (victims.length > 0) {
+                const victim = victims[Math.floor(Math.random() * victims.length)];
+                possibleActions.push(new HuntAction(individual, victim));
+            }
+            else if (sameSpeciesVictims.length > 0) {
+                const victim = sameSpeciesVictims[Math.floor(Math.random() * sameSpeciesVictims.length)];
+                possibleActions.push(new HuntAction(individual, victim));
             }
         }
+        if (canGather && state.climate.food > 0) {
+            possibleActions.push(new GatherAction(individual));
+        }
     }
-    return state;
+    if (possibleActions.length > 0) {
+        const action = possibleActions[Math.floor(Math.random() * possibleActions.length)];
+        action.execute();
+        return true;
+    }
+    return false;
 }
 function doExtinction() {
-    state.extinctions = new Extinctions();
-    for (let player of state.players) {
-        var hungryIndividuals = 0;
-        var eatenIndividuals = 0;
-        var extinctSpecies = 0;
-        for (let species of player.species) {
-            const oldIndividuals = species.individuals.length;
-            species.individuals = species.individuals.filter(individual => !individual.eaten);
-            eatenIndividuals += oldIndividuals - species.aliveIndividuals();
-            const uneatenIndividuals = species.individuals.length;
-            species.individuals = species.individuals.filter(individual => individual.hunger <= 0);
-            hungryIndividuals = uneatenIndividuals - species.aliveIndividuals();
+    const eatenIndividuals = [];
+    const starvedIndividuals = [];
+    // separate dead individuals and update species
+    for (let species of state.species) {
+        const alive = [];
+        for (let individual of species.individuals) {
+            if (individual.eaten) {
+                eatenIndividuals.push(individual);
+            }
+            else if (individual.hunger > 0) {
+                starvedIndividuals.push(individual);
+            }
+            else {
+                alive.push(individual);
+            }
         }
-        const initialSpeciesCount = player.species.length;
-        player.species = player.species.filter(species => species.aliveIndividuals() > 0);
-        extinctSpecies = initialSpeciesCount - player.species.length;
-        // TODO: store and display per player
-        state.extinctions.hungryIndividuals += hungryIndividuals;
-        state.extinctions.eatenIndividuals += eatenIndividuals;
-        state.extinctions.extinctSpecies += extinctSpecies;
+        species.individuals = alive;
     }
-    return state;
+    // remove extinct species
+    state.species = state.species.filter(species => species.aliveIndividuals() > 0);
+    if (starvedIndividuals.length > 0) {
+        log(`${starvedIndividuals.length} individuals starved`);
+    }
+    return [eatenIndividuals, starvedIndividuals];
 }
+const hungerLabels = ["🟢", "🟡", "🔴"];
 class Individual {
     id;
     hunger;
@@ -194,15 +273,26 @@ class Individual {
     species;
     constructor(species) {
         this.species = species;
-        this.id = this.species.maxIndividualId;
+        this.id = this.species.id + this.species.maxIndividualId;
         this.species.maxIndividualId++;
         this.hunger = species.defaultHunger;
     }
     toString() {
-        return `${this.species.id}${this.id} ${this.species.getTraitsString()} ${this.hunger} hunger ${this.shelter ? "sheltered" : "exposed"} ${this.eaten ? "eaten" : ""}`;
+        return `${this.id} (${this.species.getTraitsString()})`;
+    }
+    statusString() {
+        return `${hungerLabels[this.hunger]}${this.shelter ? "🛡️" : "👁️"}`;
+    }
+    canBeEatenBy(predator) {
+        if (this.eaten) {
+            return false;
+        }
+        if (this.shelter) {
+            return false;
+        }
+        return this.species.canBeEatenBy(predator);
     }
 }
-// TODO: calculate strength based on traits, diet and other species
 class Species {
     id;
     maxIndividualId = 1;
@@ -210,15 +300,8 @@ class Species {
     diet = undefined;
     defaultHunger = 1;
     individuals;
-    constructor(player) {
-        this.id = player.maxSpeciesId;
-        player.maxSpeciesId = String.fromCharCode(player.maxSpeciesId.charCodeAt(0) + 1);
-        if (player.maxSpeciesId > "Z" && player.maxSpeciesId < "a") {
-            player.maxSpeciesId = "a";
-        }
-        else if (player.maxSpeciesId > "z") {
-            throw new Error("Too many species");
-        }
+    constructor(state) {
+        this.id = state.nextSpeciesId();
         this.individuals = [new Individual(this)];
     }
     aliveIndividuals() {
@@ -228,19 +311,22 @@ class Species {
         this.traits = sortTraits(this.traits);
         var label = "";
         for (let trait of this.traits) {
-            label += ` ${trait}`;
+            label += `${trait} `;
         }
         if (this.diet == undefined) {
-            label += " herbivore";
+            label += "herbivore";
         }
         else {
-            label += ` ${this.diet}`;
+            label += `${this.diet}`;
         }
         return label;
     }
-    toString() {
+    getIndividualsAndTraitsString() {
         const plural = this.aliveIndividuals() != 1 ? 's' : '';
-        return `${this.aliveIndividuals().toString()} ${this.getTraitsString()}${plural} ${this.id}`;
+        return `${this.aliveIndividuals().toString()} ${this.getTraitsString()}${plural}`;
+    }
+    toString() {
+        return `${this.id} (${this.getIndividualsAndTraitsString()})`;
     }
     getTraitOrDietCount() {
         return this.traits.length + (this.diet ? 1 : 0);
@@ -276,13 +362,7 @@ class Species {
         this.diet = diet;
         return true;
     }
-    canBeEatenBy(individual, predator) {
-        if (individual.shelter) {
-            return false;
-        }
-        if (this.traits.includes(Trait.BURROWING) && individual.hunger == 0) {
-            return false;
-        }
+    canBeEatenBy(predator) {
         if (this.traits.includes(Trait.SWIMMING) && !predator.traits.includes(Trait.SWIMMING)) {
             return false;
         }
@@ -290,13 +370,6 @@ class Species {
             return false;
         }
         return true;
-    }
-}
-class Player {
-    species = [];
-    maxSpeciesId;
-    constructor(maxSpeciesId) {
-        this.maxSpeciesId = maxSpeciesId;
     }
 }
 var Phase;
@@ -313,22 +386,149 @@ class Climate {
         this.shelter = Math.ceil(Math.random() * 6);
     }
 }
-class Extinctions {
-    eatenIndividuals = 0;
-    hungryIndividuals = 0;
-    extinctSpecies = 0;
-}
 class State {
     initial = true;
-    phase = Phase.Extinction;
-    players = [
-        new Player("A"),
-        new Player("A"),
-    ];
+    phase = Phase.Development;
+    species = [];
+    speciesId = " @"; // will be incremented to " A"
     climate = new Climate();
-    extinctions = new Extinctions();
+    nextSpeciesId() {
+        // increment last character
+        this.speciesId = this.speciesId[0] + String.fromCharCode(this.speciesId.charCodeAt(1) + 1);
+        // prevent collisions
+        if (this.species.some(species => species.id == this.speciesId)) {
+            return this.nextSpeciesId();
+        }
+        // handle overflow of last character
+        if (this.speciesId[1] > "Z") {
+            if (this.speciesId[0] == " ") {
+                this.speciesId = "AA";
+            }
+            else {
+                if (this.speciesId[0] < "Z") {
+                    // increment first character and reset last character to A
+                    this.speciesId = String.fromCharCode(this.speciesId.charCodeAt(0) + 1) + "A";
+                }
+                else {
+                    console.log("Ran out of two character ids, cycling back to A");
+                    this.speciesId = " A";
+                }
+            }
+        }
+        return this.speciesId;
+    }
 }
 var state = new State();
+function nextPhase() {
+    setPhaseTitle();
+    setBackground();
+    clearLog();
+    var speciesBefore;
+    switch (state.phase) {
+        case Phase.Development:
+            speciesBefore = getSpeciesBefore();
+            doDevelopment();
+            logAfterDevelopment(speciesBefore);
+            state.phase = Phase.Feeding;
+            break;
+        case Phase.Feeding:
+            speciesBefore = getSpeciesBefore();
+            const deaths = doFeeding();
+            logAfterFeeding(speciesBefore, deaths);
+            state.phase = Phase.Development;
+            break;
+    }
+}
+function getSpeciesBefore() {
+    const speciesBefore = {};
+    for (let species of state.species) {
+        speciesBefore[species.id] = { individuals: species.individuals.length, traits: species.getTraitsString() };
+    }
+    return speciesBefore;
+}
+function logAfterDevelopment(speciesBefore) {
+    const speciesAfter = {};
+    for (let species of state.species) {
+        speciesAfter[species.id] = { individuals: species.individuals.length, traits: species.getTraitsString() };
+    }
+    const allSpeciesIds = new Set([...Object.keys(speciesBefore), ...Object.keys(speciesAfter)]);
+    resetSpecies();
+    for (let speciesId of allSpeciesIds) {
+        const before = speciesBefore[speciesId] || { individuals: 0, traits: "" };
+        const after = speciesAfter[speciesId] || { individuals: 0, traits: "" };
+        let message = `${speciesId}: `;
+        const sameCount = before.individuals === after.individuals;
+        const sameTraits = before.traits === after.traits;
+        if (sameCount && sameTraits) {
+            message += `${before.individuals} ${before.traits}`;
+            if (before.individuals != 1) {
+                message += "s";
+            }
+            addToSpecies(message);
+            continue;
+        }
+        message += before.individuals;
+        if (!sameTraits && before.traits !== "") {
+            message += ` ${before.traits}`;
+            if (before.individuals != 1) {
+                message += "s";
+            }
+        }
+        message += " -> ";
+        if (!sameCount) {
+            message += after.individuals;
+        }
+        message += ` ${after.traits}`;
+        if (after.individuals != 1) {
+            message += "s";
+        }
+        addToSpecies(message);
+    }
+}
+function logAfterFeeding(before, deaths) {
+    const individualsAfter = {};
+    for (let species of state.species) {
+        individualsAfter[species.id] = species.individuals.length;
+    }
+    const allSpeciesIds = new Set([...Object.keys(before), ...Object.keys(individualsAfter)]);
+    const speciesEaten = {};
+    const speciesStarved = {};
+    for (const eaten of deaths[0]) {
+        const speciesId = eaten.species.id;
+        speciesEaten[speciesId] = (speciesEaten[speciesId] || 0) + 1;
+    }
+    for (const starved of deaths[1]) {
+        const speciesId = starved.species.id;
+        speciesStarved[speciesId] = (speciesStarved[speciesId] || 0) + 1;
+    }
+    resetSpecies();
+    for (let speciesId of allSpeciesIds) {
+        const traits = before[speciesId]?.traits || "";
+        const beforeCount = before[speciesId]?.individuals || 0;
+        const afterCount = individualsAfter[speciesId] || 0;
+        let message = `${speciesId}: `;
+        message += beforeCount == afterCount
+            ? `${beforeCount} `
+            : `${beforeCount} -> ${afterCount} `;
+        message += `${traits}`;
+        if (beforeCount != 1 || afterCount != 1) {
+            message += "s";
+        }
+        const eatenCount = speciesEaten[speciesId] || 0;
+        const starvedCount = speciesStarved[speciesId] || 0;
+        if (eatenCount || starvedCount) {
+            const parts = [];
+            if (eatenCount) {
+                parts.push(`${eatenCount} eaten`);
+            }
+            if (starvedCount) {
+                parts.push(`${starvedCount} starved`);
+            }
+            message += ` (${parts.join(", ")})`;
+        }
+        addToSpecies(message);
+    }
+}
 var Trait;
 (function (Trait) {
     Trait["LARGE"] = "large";
@@ -351,71 +551,55 @@ function getRandomTraitOrDiet() {
     return allTraitsAndDiets[Math.floor(Math.random() * allTraitsAndDiets.length)];
 }
 window.onload = function () {
-    initUi();
-    nextPhase();
     nextPhase();
 };
-function columnContainer(columns) {
-    const wrapper = document.createElement("div");
-    wrapper.className = "column-wrapper";
-    for (let column of columns) {
-        const columnDiv = document.createElement("div");
-        columnDiv.className = "column";
-        for (let element of column) {
-            columnDiv.appendChild(element);
-        }
-        wrapper.appendChild(columnDiv);
-    }
-    return wrapper;
+function clearLog() {
+    document.getElementById("log").innerHTML = "";
 }
-function initUi() {
-    const nextPhaseButton = document.createElement("button");
-    nextPhaseButton.id = "nextPhase";
-    nextPhaseButton.innerText = "Next phase";
-    nextPhaseButton.onclick = nextPhase;
-    document.getElementById("interaction").appendChild(columnContainer([[], [nextPhaseButton], []]));
+function log(message = "") {
+    const p = document.createElement("p");
+    p.innerText = message;
+    document.getElementById("log").appendChild(p);
 }
-function display(state) {
-    console.log(state);
-    if (state.initial) {
-        state.initial = false;
-        return;
+function setPhaseTitle() {
+    const title = document.getElementById("phase-title");
+    switch (state.phase) {
+        case Phase.Development:
+            title.innerText = "Development Phase";
+            break;
+        case Phase.Feeding:
+            title.innerText = "Feeding Phase";
+            break;
     }
-    var playerElements = [];
-    for (var i = 0; i < state.players.length; i++) {
-        var text = '';
-        for (let species of state.players[i].species) {
-            text += species.toString() + "\n";
-        }
-        const playerLabel = document.createElement("p");
-        playerLabel.innerText = text;
-        playerElements.push([playerLabel]);
+}
+function setBackground() {
+    switch (state.phase) {
+        case Phase.Development:
+            document.body.style.backgroundColor = "#f0f7f6";
+            break;
+        case Phase.Feeding:
+            document.body.style.backgroundColor = "#fffef2";
+            break;
     }
-    var climateLabel = document.createElement("p");
-    var climateIndicator = "";
-    if (state.phase == Phase.Development) {
-        climateIndicator = "available";
+}
+function resetSpecies() {
+    document.getElementById("species").innerHTML = "";
+}
+function addToSpecies(line) {
+    const speciesDiv = document.getElementById("species");
+    const p = document.createElement("p");
+    p.innerText = line;
+    speciesDiv.appendChild(p);
+}
+function showHideLog() {
+    const logDiv = document.getElementById("log");
+    const logTitle = document.getElementById("log-title");
+    if (logDiv.classList.contains("hide")) {
+        logDiv.classList.remove("hide");
+        logTitle.innerText = "Log -";
     }
-    else if (state.phase == Phase.Feeding) {
-        climateIndicator = "remaining";
+    else {
+        logDiv.classList.add("hide");
+        logTitle.innerText = "Log +";
     }
-    if (climateIndicator) {
-        climateLabel.innerText = `${state.climate.food} food ${climateIndicator} \n ${state.climate.shelter} shelter ${climateIndicator}\n\n`;
-        playerElements.push([climateLabel]);
-    }
-    if (state.phase == Phase.Extinction) {
-        var extinctionLabel = document.createElement("p");
-        extinctionLabel.innerText = `${state.extinctions.hungryIndividuals} individuals died of hunger\n${state.extinctions.eatenIndividuals} individuals were eaten\n${state.extinctions.extinctSpecies} species got extinct\n\n`;
-        playerElements.push([extinctionLabel]);
-    }
-    // make sure the number of columns is constant
-    if (playerElements.length === state.players.length) {
-        playerElements.push([]);
-    }
-    document.getElementById("phases").prepend(columnContainer(playerElements));
-    var infoElements = [];
-    const phaseLabel = document.createElement("p");
-    phaseLabel.innerText = `Phase: ${Phase[state.phase]}`;
-    infoElements.push(phaseLabel);
-    document.getElementById("phases").prepend(columnContainer([[], infoElements, []]));
 }
