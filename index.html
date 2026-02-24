@@ -9,18 +9,14 @@
 </head>
 
 <body>
-    <div id="interaction">
-        <button id="next-phase" onclick="nextPhase()">Next phase</button>
+    <div id="iteration-section">
+        <h2 id="iteration-title"></h2>
+        <button class="big-button" onclick="nextIteration(1)">Next iteration</button>
+        <button class="big-button" onclick="nextIteration(10)">Next 10 iterations</button>
+        <button class="big-button" id="play-pause-btn" onclick="togglePlay()">▶ Play</button>
     </div>
-    <div id="phase">
-        <h2 id="phase-title"></h2>
-        <h3>Species</h3>
-        <div id="species">
-
-        </div>
-    </div>
-    <div id="log-container" onclick="showHideLog()">
-        <h3 id="log-title">Log -</h3>
-        <div id="log"></div>
-    </div>
+    <h3 id="individuals-title">Individuals</h3>
+    <div id="individuals"></div>
+    <h3>Environment</h3>
+    <div id="environment"></div>
 </body>

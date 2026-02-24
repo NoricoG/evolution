@@ -1,68 +1,100 @@
-var didNewSpecies = 0;
-var didAddTraitOrDiet = 0;
-var didExtraIndividual = 0;
-function doDevelopment() {
-    var actions = 2;
-    for (let species of state.species) {
-        actions += species.aliveIndividuals();
-    }
-    clearLog();
-    log(actions + " development actions");
-    didNewSpecies = 0;
-    didAddTraitOrDiet = 0;
-    didExtraIndividual = 0;
-    while (actions > 0) {
-        actions--;
-        const action = Math.random();
-        const noSpecies = state.species.length === 0;
-        const underdevelopedSpeciesIndices = state.species.map((species, index) => species.getTraitOrDietCount() < 3 ? index : -1).filter(index => index >= 0);
-        const anyUnderdeveloped = underdevelopedSpeciesIndices.length > 0;
-        const noLonelyIndividuals = state.species.every(species => species.aliveIndividuals() > 1);
-        if (action < 1 / 4 || noSpecies) {
-            newSpecies();
+// action to prioritise for debugging
+// const debugAction = FeedChildAction;
+const debugAction = null;
+let playInterval = null;
+function play() {
+    playInterval = setInterval(() => nextIteration(1), 1000);
+}
+function pause() {
+    clearInterval(playInterval);
+    playInterval = null;
+}
+function nextIteration(iterations) {
+    for (let i = 0; i < iterations; i++) {
+        // cleanup
+        for (let individualId of Object.keys(state.individuals)) {
+            if (state.individuals[individualId].dead) {
+                delete state.individuals[individualId];
+            }
         }
-        else if (action < 3 / 4 && anyUnderdeveloped && noLonelyIndividuals) {
-            addTraitOrDiet(underdevelopedSpeciesIndices);
+        clearActions();
+        state.day++;
+        addIndividuals();
+        state.environment = new Environment(state);
+        actAllIndividuals();
+        starveIndividuals();
+        if (state.individualsArray.filter(individual => !individual.dead).length == 0) {
+            alert("All individuals have died.");
         }
-        else {
-            extraIndividual();
-        }
     }
-    if (didNewSpecies > 0) {
-        log(`${didNewSpecies} new species`);
-    }
-    if (didAddTraitOrDiet > 0) {
-        log(`${didAddTraitOrDiet} added traits or diets`);
-    }
-    if (didExtraIndividual > 0) {
-        log(`${didExtraIndividual} extra individuals`);
+    updateUI();
+}
+function addIndividuals() {
+    const startingIndividuals = 10;
+    const migratingIndividuals = Math.max(2, 10 - state.individualsArray.length);
+    const starting = state.individualsArray.length == 0;
+    const extraIndividuals = starting ? startingIndividuals : migratingIndividuals;
+    for (let i = 0; i < extraIndividuals; i++) {
+        const randomDiet = Object.values(Diet)[Math.floor(Math.random() * Object.values(Diet).length)];
+        const newIndividual = new Individual(null, [], randomDiet, 1);
+        state.addIndividual(newIndividual);
     }
 }
-function newSpecies() {
-    const newSpecies = new Species(state);
-    state.species.push(newSpecies);
-    didNewSpecies++;
-}
-function extraIndividual() {
-    const chosenSpecies = state.species[Math.floor(Math.random() * state.species.length)];
-    chosenSpecies.addIndividual();
-    didExtraIndividual++;
-}
-function addTraitOrDiet(underdevelopedSpeciesIndices) {
-    var traitOrDiet = getRandomTraitOrDiet();
-    var chosenSpeciesIndex = underdevelopedSpeciesIndices[Math.floor(Math.random() * underdevelopedSpeciesIndices.length)];
-    var chosenSpecies = state.species[chosenSpeciesIndex];
-    var added = false;
-    while (!added && chosenSpeciesIndex < state.species.length) {
-        added = state.species[chosenSpeciesIndex].addTraitOrDiet(traitOrDiet);
-        chosenSpeciesIndex++;
+function actAllIndividuals() {
+    // shuffle individuals
+    const individualsArray = state.individualsArray;
+    for (let i = individualsArray.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [individualsArray[i], individualsArray[j]] = [individualsArray[j], individualsArray[i]];
     }
-    if (added) {
-        didAddTraitOrDiet++;
+    for (const individual of individualsArray) {
+        actIndividual(individual);
+    }
+}
+function actIndividual(individual) {
+    if (individual.dead) {
+        return;
+    }
+    if (individual.getAge() == 0) {
+        return;
+    }
+    const possibleActions = [];
+    for (const ActionClass of allActions) {
+        const action = new ActionClass(individual);
+        if (action.isPossible()) {
+            possibleActions.push(action);
+        }
+    }
+    if (possibleActions.length > 0) {
+        var action = possibleActions[Math.floor(Math.random() * possibleActions.length)];
+        // debug specific action
+        if (debugAction && possibleActions.some(a => a instanceof debugAction) && !(action instanceof debugAction)) {
+            const oldAction = action.toString();
+            action = possibleActions.find(a => a instanceof debugAction);
+            const newAction = action.toString();
+            console.log(`Debug: ${individual.id} will do ${newAction} instead of ${oldAction}`);
+        }
+        action.execute();
+        saveEvent(action.individual.id, action.toString());
+        individual.energy -= individual.energyNeed();
+        return true;
     }
     else {
-        newSpecies();
+        saveEvent(individual.id, `x`);
     }
+}
+function starveIndividuals() {
+    let starvedIndividuals = 0;
+    for (let individual of state.individualsArray) {
+        if (individual.energy <= 0 && !individual.dead && individual.getAge() > 0) {
+            individual.starved = true;
+            state.dieIndividual(individual.id);
+            starvedIndividuals++;
+        }
+    }
+}
+function leftShelterSymbol(leftShelter) {
+    return leftShelter ? "🏃🏻‍♂️‍➡️" : "";
 }
 class Action {
     individual;
@@ -71,299 +103,186 @@ class Action {
     }
 }
 class HideAction extends Action {
+    isPossible() {
+        return !this.individual.shelter && state.environment.shelter > 0;
+    }
     execute() {
         this.individual.shelter = true;
-        state.climate.shelter--;
-        log(`${this.individual.id} 🛡️ -> ${this.individual.statusString()}`);
-        if (state.climate.shelter == 0) {
-            log("0 shelter remaining");
-        }
+        state.environment.shelter--;
+    }
+    toString() {
+        return `🛡️`;
     }
 }
 class GatherAction extends Action {
+    leftShelter = false;
+    isPossible() {
+        return this.individual.energy < maxEnergy && state.environment.food > 0 && this.individual.diet != Diet.CARNIVORE;
+    }
     execute() {
-        this.individual.hunger--;
-        if (this.individual.species.traits.includes(Trait.BURROWING) && this.individual.hunger == 0) {
-            this.individual.shelter = true;
-        }
-        state.climate.food--;
-        log(`${this.individual.id} 🥕 -> ${this.individual.statusString()}`);
-        if (state.climate.food == 0) {
-            log("0 food remaining");
-        }
+        this.leftShelter = this.individual.leaveShelter();
+        this.individual.eat(1);
+        state.environment.food--;
+    }
+    toString() {
+        return `${leftShelterSymbol(this.leftShelter)}🥕`;
+    }
+}
+class ReproduceAction extends Action {
+    cloneId = "";
+    isPossible() {
+        return this.individual.getAge() > 0 && this.individual.energy > 1;
+    }
+    execute() {
+        const baby = this.individual.procreate();
+        this.cloneId = baby.id;
+    }
+    toString() {
+        return `👶 ${this.cloneId}`;
+    }
+}
+class AddTraitAction extends Action {
+    gainedTrait = null;
+    isPossible() {
+        return this.individual.traits.length < 3 && this.individual.energy >= maxEnergy && this.individual.getAge() < 3;
+    }
+    execute() {
+        const newTraits = Object.values(Trait).filter(trait => !this.individual.traits.includes(trait));
+        this.gainedTrait = newTraits[Math.floor(Math.random() * newTraits.length)];
+        this.individual.addTrait(this.gainedTrait);
+    }
+    toString() {
+        return `🆕 ${this.gainedTrait}`;
     }
 }
 class HuntAction extends Action {
-    victim;
-    constructor(individual, victim) {
-        super(individual);
-        this.victim = victim;
+    possibleVictims = [];
+    victim = null;
+    leftShelter = false;
+    isPossible() {
+        if (this.individual.diet !== Diet.CARNIVORE && this.individual.diet !== Diet.OMNIVORE) {
+            return false;
+        }
+        if (this.individual.energy >= maxEnergy) {
+            return false;
+        }
+        this.possibleVictims = state.individualsArray.filter(v => v.id !== this.individual.id && // don't hunt yourself
+            v.id !== this.individual.parent?.id && // don't hunt your parent
+            v.parent?.id !== this.individual.id && // don't hunt your children
+            v.canBeHuntedBy(this.individual));
+        return this.possibleVictims.length > 0;
     }
     execute() {
-        this.individual.hunger -= this.victim.species.defaultHunger;
-        if (this.individual.hunger < 0) {
-            this.individual.hunger = 0;
+        this.individual.leaveShelter();
+        this.victim = this.possibleVictims[Math.floor(Math.random() * this.possibleVictims.length)];
+        if (!this.victim.canBeHuntedBy(this.individual)) {
+            console.error(`Victim ${this.victim.id} is no longer a valid victim for hunter ${this.individual.id}`);
+            console.log(this.victim);
+            console.log(this.individual);
+            return;
         }
-        if (this.individual.species.traits.includes(Trait.BURROWING) && this.individual.hunger == 0) {
-            this.individual.shelter = true;
-        }
+        this.individual.eat(this.victim.nutritionalValue());
+        state.dieIndividual(this.victim.id);
         this.victim.eaten = true;
-        log(`${this.individual.id} 🍗 ${this.victim.id} -> ${this.individual.statusString()}`);
-        this.triggerScavanger();
-    }
-    triggerScavanger() {
-        for (let species of state.species) {
-            if (species.diet == Diet.SCAVENGER) {
-                for (let individual of species.individuals) {
-                    if (!individual.eaten && individual.hunger > 0) {
-                        individual.hunger--;
-                        if (individual.species.traits.includes(Trait.BURROWING) && individual.hunger == 0) {
-                            individual.shelter = true;
-                        }
-                        log(` ${individual.id} 🦴 ${this.victim.id} -> ${individual.statusString()}`);
-                        return;
-                    }
-                }
-            }
-        }
-    }
-}
-function doFeeding() {
-    actions();
-    return doExtinction();
-}
-function actions() {
-    const dietCounts = {};
-    var herbivores = 0;
-    for (let species of state.species) {
-        if (species.diet) {
-            dietCounts[species.diet] = (dietCounts[species.diet] || 0) + 1;
-        }
-        else {
-            herbivores++;
-        }
-    }
-    var diets = [];
-    if (herbivores > 0) {
-        diets.push(`${herbivores} herbivore${herbivores > 1 ? "s" : ""}`);
-    }
-    if (dietCounts[Diet.CARNIVORE]) {
-        diets.push(`${dietCounts[Diet.CARNIVORE]} carnivore${dietCounts[Diet.CARNIVORE] > 1 ? "s" : ""}`);
-    }
-    if (dietCounts[Diet.OMNIVORE]) {
-        diets.push(`${dietCounts[Diet.OMNIVORE]} omnivore${dietCounts[Diet.OMNIVORE] > 1 ? "s" : ""}`);
-    }
-    if (dietCounts[Diet.SCAVENGER]) {
-        diets.push(`${dietCounts[Diet.SCAVENGER]} scavenger${dietCounts[Diet.SCAVENGER] > 1 ? "s" : ""}`);
-    }
-    log(diets.join(", "));
-    state.climate = new Climate();
-    log(`${state.climate.food} food, ${state.climate.shelter} shelter`);
-    // reset hunger and shelter
-    for (let species of state.species) {
-        for (let individual of species.individuals) {
-            individual.hunger = species.defaultHunger;
-            individual.shelter = false;
-        }
-    }
-    var allIndividuals = state.species.flatMap(species => species.individuals.map(individual => [species, individual]));
-    var active = true;
-    while (active) {
-        active = false;
-        // shuffle allIndividuals
-        for (let i = allIndividuals.length - 1; i > 0; i--) {
-            const j = Math.floor(Math.random() * (i + 1));
-            [allIndividuals[i], allIndividuals[j]] = [allIndividuals[j], allIndividuals[i]];
-        }
-        for (const [species, individual] of allIndividuals) {
-            if (act(species, individual)) {
-                active = true;
-            }
-        }
-    }
-    if (state.climate.food > 0) {
-        log(`${state.climate.food} food remaining`);
-    }
-    if (state.climate.shelter > 0) {
-        log(`${state.climate.shelter} shelter remaining`);
-    }
-}
-function act(species, individual) {
-    if (individual.eaten) {
-        return false;
-    }
-    const possibleActions = [];
-    if (!individual.shelter && state.climate.shelter > 0) {
-        possibleActions.push(new HideAction(individual));
-    }
-    if (individual.hunger > 0) {
-        const canHunt = species.diet === Diet.CARNIVORE || species.diet === Diet.OMNIVORE;
-        const canGather = species.diet != Diet.CARNIVORE;
-        if (canHunt) {
-            const victims = [];
-            const sameSpeciesVictims = [];
-            for (let victimSpecies of state.species) {
-                for (let victimIndividual of victimSpecies.individuals) {
-                    // can't eat itself
-                    if (individual.id === victimIndividual.id) {
-                        continue;
-                    }
-                    if (victimIndividual.canBeEatenBy(species)) {
-                        if (victimSpecies == species) {
-                            sameSpeciesVictims.push(victimIndividual);
-                        }
-                        else {
-                            victims.push(victimIndividual);
-                        }
-                    }
-                }
-            }
-            if (victims.length > 0) {
-                const victim = victims[Math.floor(Math.random() * victims.length)];
-                possibleActions.push(new HuntAction(individual, victim));
-            }
-            else if (sameSpeciesVictims.length > 0) {
-                const victim = sameSpeciesVictims[Math.floor(Math.random() * sameSpeciesVictims.length)];
-                possibleActions.push(new HuntAction(individual, victim));
-            }
-        }
-        if (canGather && state.climate.food > 0) {
-            possibleActions.push(new GatherAction(individual));
-        }
-    }
-    if (possibleActions.length > 0) {
-        const action = possibleActions[Math.floor(Math.random() * possibleActions.length)];
-        action.execute();
-        return true;
-    }
-    return false;
-}
-function doExtinction() {
-    const eatenIndividuals = [];
-    const starvedIndividuals = [];
-    // separate dead individuals and update species
-    for (let species of state.species) {
-        const alive = [];
-        for (let individual of species.individuals) {
-            if (individual.eaten) {
-                eatenIndividuals.push(individual);
-            }
-            else if (individual.hunger > 0) {
-                starvedIndividuals.push(individual);
-            }
-            else {
-                alive.push(individual);
-            }
-        }
-        species.individuals = alive;
-    }
-    // remove extinct species
-    state.species = state.species.filter(species => species.aliveIndividuals() > 0);
-    if (starvedIndividuals.length > 0) {
-        log(`${starvedIndividuals.length} individuals starved`);
-    }
-    return [eatenIndividuals, starvedIndividuals];
-}
-const hungerLabels = ["🟢", "🟡", "🔴"];
-class Individual {
-    id;
-    hunger;
-    shelter = false;
-    eaten = false;
-    species;
-    constructor(species) {
-        this.species = species;
-        this.id = this.species.id + this.species.maxIndividualId;
-        this.species.maxIndividualId++;
-        this.hunger = species.defaultHunger;
+        state.environment.bodies.push(this.victim.id);
     }
     toString() {
-        return `${this.id} (${this.species.getTraitsString()})`;
+        var victimId = this.victim ? this.victim.id : "❌";
+        return `${leftShelterSymbol(this.leftShelter)}🍗 ${victimId}`;
     }
-    statusString() {
-        return `${hungerLabels[this.hunger]}${this.shelter ? "🛡️" : "👁️"}`;
+}
+class ScavengeAction extends Action {
+    bodyId = "";
+    leftShelter = false;
+    isPossible() {
+        return this.individual.diet === Diet.SCAVENGER && this.individual.energy < maxEnergy && state.environment.bodies.length > 0;
     }
-    canBeEatenBy(predator) {
-        if (this.eaten) {
+    execute() {
+        this.leftShelter = this.individual.leaveShelter();
+        this.bodyId = state.environment.bodies[Math.floor(Math.random() * state.environment.bodies.length)];
+        const nutritionalValue = state.individuals[this.bodyId].nutritionalValue();
+        this.individual.eat(nutritionalValue);
+        state.environment.bodies = state.environment.bodies.filter(id => id !== this.bodyId);
+    }
+    toString() {
+        return `${leftShelterSymbol(this.leftShelter)}🦴 ${this.bodyId}`;
+    }
+}
+class FeedChildAction extends Action {
+    offspringId = "";
+    isPossible() {
+        return this.individual.energy > 1 && this.individual.children.length > 0;
+    }
+    execute() {
+        const child = this.individual.children[Math.floor(Math.random() * this.individual.children.length)];
+        this.offspringId = child.id;
+        child.eat(1);
+    }
+    toString() {
+        return `🍼👶 ${this.offspringId}`;
+    }
+}
+const allActions = [ReproduceAction, AddTraitAction, HideAction, HuntAction, GatherAction, ScavengeAction, FeedChildAction];
+const maxEnergy = 3;
+const mutationChance = 0.1;
+var Trait;
+(function (Trait) {
+    Trait["LARGE"] = "large";
+    Trait["BURROW"] = "burrow";
+    Trait["SWIM"] = "swim";
+})(Trait || (Trait = {}));
+var Diet;
+(function (Diet) {
+    Diet["HERBIVORE"] = "herbivore";
+    Diet["CARNIVORE"] = "carnivore";
+    Diet["OMNIVORE"] = "omnivore";
+    Diet["SCAVENGER"] = "scavenger";
+})(Diet || (Diet = {}));
+class Individual {
+    id;
+    born;
+    parent;
+    dead = false;
+    eaten = false;
+    starved = false;
+    traits = [];
+    diet;
+    energy = 2;
+    shelter = false;
+    children = [];
+    constructor(parent, traits, diet, extraAge) {
+        this.id = ""; // assigned by state
+        this.born = state.day - extraAge;
+        this.parent = parent;
+        this.traits = traits;
+        if (Math.random() < mutationChance / 2 && this.traits.length > 0) {
+            // remove random trait
+            this.traits.splice(Math.floor(Math.random() * this.traits.length), 1);
+        }
+        if (Math.random() < mutationChance) {
+            const possibleNewTraits = Object.values(Trait).filter(trait => !this.traits.includes(trait));
+            if (possibleNewTraits.length > 0) {
+                this.traits.push(possibleNewTraits[Math.floor(Math.random() * possibleNewTraits.length)]);
+            }
+        }
+        this.diet = diet;
+        this.energy = 2;
+    }
+    getAge() {
+        return state.day - this.born;
+    }
+    canBeHuntedBy(predator) {
+        if (this.dead) {
             return false;
         }
         if (this.shelter) {
             return false;
         }
-        return this.species.canBeEatenBy(predator);
-    }
-}
-class Species {
-    id;
-    maxIndividualId = 1;
-    traits = [];
-    diet = undefined;
-    defaultHunger = 1;
-    individuals;
-    constructor(state) {
-        this.id = state.nextSpeciesId();
-        this.individuals = [new Individual(this)];
-    }
-    aliveIndividuals() {
-        return this.individuals.filter(x => !x.eaten).length;
-    }
-    getTraitsString() {
-        this.traits = sortTraits(this.traits);
-        var label = "";
-        for (let trait of this.traits) {
-            label += `${trait} `;
-        }
-        if (this.diet == undefined) {
-            label += "herbivore";
-        }
-        else {
-            label += `${this.diet}`;
-        }
-        return label;
-    }
-    getIndividualsAndTraitsString() {
-        const plural = this.aliveIndividuals() != 1 ? 's' : '';
-        return `${this.aliveIndividuals().toString()} ${this.getTraitsString()}${plural}`;
-    }
-    toString() {
-        return `${this.id} (${this.getIndividualsAndTraitsString()})`;
-    }
-    getTraitOrDietCount() {
-        return this.traits.length + (this.diet ? 1 : 0);
-    }
-    addIndividual() {
-        this.individuals.push(new Individual(this));
-    }
-    addTraitOrDiet(traitOrDiet) {
-        if (Object.values(Trait).includes(traitOrDiet)) {
-            return this.addTrait(traitOrDiet);
-        }
-        else if (Object.values(Diet).includes(traitOrDiet)) {
-            return this.addDiet(traitOrDiet);
-        }
-        else {
-            throw new Error(`Invalid traitOrDiet: ${traitOrDiet}`);
-        }
-    }
-    addTrait(trait) {
-        if (this.traits.includes(trait)) {
+        // protected by parent at start of life
+        if (this.getAge() == 0) {
             return false;
         }
-        this.traits.push(trait);
-        if (trait == Trait.LARGE) {
-            this.defaultHunger++;
-        }
-        return true;
-    }
-    addDiet(diet) {
-        if (this.diet != undefined) {
-            return false;
-        }
-        this.diet = diet;
-        return true;
-    }
-    canBeEatenBy(predator) {
-        if (this.traits.includes(Trait.SWIMMING) && !predator.traits.includes(Trait.SWIMMING)) {
+        if (this.traits.includes(Trait.SWIM) && !predator.traits.includes(Trait.SWIM)) {
             return false;
         }
         if (this.traits.includes(Trait.LARGE) && !predator.traits.includes(Trait.LARGE)) {
@@ -371,235 +290,304 @@ class Species {
         }
         return true;
     }
-}
-var Phase;
-(function (Phase) {
-    Phase[Phase["Development"] = 0] = "Development";
-    Phase[Phase["Feeding"] = 1] = "Feeding";
-    Phase[Phase["Extinction"] = 2] = "Extinction";
-})(Phase || (Phase = {}));
-class Climate {
-    food;
-    shelter;
-    constructor() {
-        this.food = 2 + Math.ceil(Math.random() * 6) + Math.ceil(Math.random() * 6);
-        this.shelter = Math.ceil(Math.random() * 6);
+    addTrait(trait) {
+        if (this.traits.includes(trait)) {
+            return false;
+        }
+        this.traits.push(trait);
+        return true;
+    }
+    energyNeed() {
+        return this.traits.includes(Trait.LARGE) ? 1.5 : 1;
+    }
+    nutritionalValue() {
+        return (this.traits.includes(Trait.LARGE) ? 3 : 2);
+    }
+    eat(nutritionalValue) {
+        this.energy = Math.min(maxEnergy, this.energy + nutritionalValue);
+        if (this.traits.includes(Trait.BURROW) && this.energy >= maxEnergy - 1) {
+            this.shelter = true;
+        }
+    }
+    procreate() {
+        const baby = new Individual(this, this.traits, this.diet, 0);
+        state.addIndividual(baby);
+        this.children.push(baby);
+        return baby;
+    }
+    getOffspring() {
+        var offspring = [];
+        var generation = 1;
+        offspring.push(this.children);
+        while (offspring[generation - 1].length > 0) {
+            offspring.push([]);
+            for (let child of offspring[generation - 1]) {
+                offspring[generation].push(...child.children);
+            }
+            generation++;
+        }
+        // remove last generation which is empty
+        offspring.pop();
+        const offSpringCounts = offspring.map(generation => generation.length);
+        return offSpringCounts;
+    }
+    // returns the first parent and any living older parents, from old to new
+    getParentIds() {
+        const parents = [];
+        if (this.parent) {
+            parents.push(this.parent);
+            let alive = true;
+            while (alive) {
+                const nextParent = parents[parents.length - 1].parent;
+                alive = nextParent != null && !nextParent.dead;
+                if (alive) {
+                    parents.push(nextParent);
+                }
+            }
+        }
+        return parents.map(parent => parent.id).reverse();
+    }
+    leaveShelter() {
+        if (this.shelter) {
+            this.shelter = false;
+            if (!this.traits.includes(Trait.BURROW)) {
+                state.environment.shelter++;
+            }
+            return true;
+        }
+        return false;
     }
 }
 class State {
-    initial = true;
-    phase = Phase.Development;
-    species = [];
-    speciesId = " @"; // will be incremented to " A"
-    climate = new Climate();
-    nextSpeciesId() {
-        // increment last character
-        this.speciesId = this.speciesId[0] + String.fromCharCode(this.speciesId.charCodeAt(1) + 1);
-        // prevent collisions
-        if (this.species.some(species => species.id == this.speciesId)) {
-            return this.nextSpeciesId();
+    day = 0;
+    individuals = {};
+    individualIdCounter = -1;
+    environment = new Environment(this);
+    get individualsArray() {
+        return Object.values(this.individuals);
+    }
+    nextIndividualId() {
+        this.individualIdCounter++;
+        // CVC pattern
+        // 0 Bab, 1 Cab, ..., 19 Yab, 20 Zab
+        // 21 Beb, ..., 41 Zeb
+        // ...
+        // 84 Bub, ..., 104 Zub
+        // 105 Bac, ..., 125 Zac
+        // ...
+        // 189 Buc, ..., 209 Zuc
+        // ...
+        // 2100 Baz, ..., 2120 Zaz
+        // ...
+        // 2184 Buz, ..., 2204 Zuz
+        // 2205 Bab, starting over
+        function translate(num) {
+            const consonants = 'bcdfghjklmnpqrstvwxyz';
+            const vowels = 'aeiou';
+            const c = consonants.length; // 21
+            const v = vowels.length; // 5
+            const firstIdx = num % c;
+            const vowelIdx = Math.floor(num / c) % v;
+            const lastIdx = Math.floor(num / (c * v)) % c;
+            const name = consonants[firstIdx].toUpperCase() + vowels[vowelIdx] + consonants[lastIdx];
+            return name;
         }
-        // handle overflow of last character
-        if (this.speciesId[1] > "Z") {
-            if (this.speciesId[0] == " ") {
-                this.speciesId = "AA";
-            }
-            else {
-                if (this.speciesId[0] < "Z") {
-                    // increment first character and reset last character to A
-                    this.speciesId = String.fromCharCode(this.speciesId.charCodeAt(0) + 1) + "A";
-                }
-                else {
-                    console.log("Ran out of two character ids, cycling back to A");
-                    this.speciesId = " A";
-                }
-            }
+        return translate(this.individualIdCounter);
+    }
+    addIndividual(individual) {
+        individual.id = this.nextIndividualId();
+        this.individuals[individual.id] = individual;
+    }
+    dieIndividual(individualId) {
+        this.individuals[individualId].dead = true;
+        const parent = this.individuals[individualId].parent;
+        if (parent) {
+            parent.children = parent.children.filter(child => child.id !== individualId);
         }
-        return this.speciesId;
+        this.environment.bodies.push(individualId);
+    }
+    livingIndividualCount() {
+        return Object.values(this.individuals).filter(individual => !individual.dead).length;
+    }
+}
+class Environment {
+    initialFood;
+    food;
+    initialShelter;
+    shelter;
+    bodies;
+    constructor(state) {
+        const livingCount = state.livingIndividualCount();
+        this.initialFood = Math.round((0.1 + Math.random()) * livingCount);
+        this.food = this.initialFood;
+        this.initialShelter = Math.ceil(Math.random() * 6);
+        this.shelter = this.initialShelter;
+        this.bodies = [];
     }
 }
 var state = new State();
-function nextPhase() {
-    setPhaseTitle();
-    setBackground();
-    clearLog();
-    var speciesBefore;
-    switch (state.phase) {
-        case Phase.Development:
-            speciesBefore = getSpeciesBefore();
-            doDevelopment();
-            logAfterDevelopment(speciesBefore);
-            state.phase = Phase.Feeding;
-            break;
-        case Phase.Feeding:
-            speciesBefore = getSpeciesBefore();
-            const deaths = doFeeding();
-            logAfterFeeding(speciesBefore, deaths);
-            state.phase = Phase.Development;
-            break;
-    }
-}
-function getSpeciesBefore() {
-    const speciesBefore = {};
-    for (let species of state.species) {
-        speciesBefore[species.id] = { individuals: species.individuals.length, traits: species.getTraitsString() };
-    }
-    return speciesBefore;
-}
-function logAfterDevelopment(speciesBefore) {
-    const speciesAfter = {};
-    for (let species of state.species) {
-        speciesAfter[species.id] = { individuals: species.individuals.length, traits: species.getTraitsString() };
-    }
-    const allSpeciesIds = new Set([...Object.keys(speciesBefore), ...Object.keys(speciesAfter)]);
-    resetSpecies();
-    for (let speciesId of allSpeciesIds) {
-        const before = speciesBefore[speciesId] || { individuals: 0, traits: "" };
-        const after = speciesAfter[speciesId] || { individuals: 0, traits: "" };
-        let message = `${speciesId}: `;
-        const sameCount = before.individuals === after.individuals;
-        const sameTraits = before.traits === after.traits;
-        if (sameCount && sameTraits) {
-            message += `${before.individuals} ${before.traits}`;
-            if (before.individuals != 1) {
-                message += "s";
-            }
-            addToSpecies(message);
-            continue;
-        }
-        message += before.individuals;
-        if (!sameTraits && before.traits !== "") {
-            message += ` ${before.traits}`;
-            if (before.individuals != 1) {
-                message += "s";
-            }
-        }
-        message += " -> ";
-        if (!sameCount) {
-            message += after.individuals;
-        }
-        message += ` ${after.traits}`;
-        if (after.individuals != 1) {
-            message += "s";
-        }
-        addToSpecies(message);
-    }
-}
-function logAfterFeeding(before, deaths) {
-    const individualsAfter = {};
-    for (let species of state.species) {
-        individualsAfter[species.id] = species.individuals.length;
-    }
-    const allSpeciesIds = new Set([...Object.keys(before), ...Object.keys(individualsAfter)]);
-    const speciesEaten = {};
-    const speciesStarved = {};
-    for (const eaten of deaths[0]) {
-        const speciesId = eaten.species.id;
-        speciesEaten[speciesId] = (speciesEaten[speciesId] || 0) + 1;
-    }
-    for (const starved of deaths[1]) {
-        const speciesId = starved.species.id;
-        speciesStarved[speciesId] = (speciesStarved[speciesId] || 0) + 1;
-    }
-    resetSpecies();
-    for (let speciesId of allSpeciesIds) {
-        const traits = before[speciesId]?.traits || "";
-        const beforeCount = before[speciesId]?.individuals || 0;
-        const afterCount = individualsAfter[speciesId] || 0;
-        let message = `${speciesId}: `;
-        message += beforeCount == afterCount
-            ? `${beforeCount} `
-            : `${beforeCount} -> ${afterCount} `;
-        message += `${traits}`;
-        if (beforeCount != 1 || afterCount != 1) {
-            message += "s";
-        }
-        const eatenCount = speciesEaten[speciesId] || 0;
-        const starvedCount = speciesStarved[speciesId] || 0;
-        if (eatenCount || starvedCount) {
-            const parts = [];
-            if (eatenCount) {
-                parts.push(`${eatenCount} eaten`);
-            }
-            if (starvedCount) {
-                parts.push(`${starvedCount} starved`);
-            }
-            message += ` (${parts.join(", ")})`;
-        }
-        addToSpecies(message);
-    }
-}
-var Trait;
-(function (Trait) {
-    Trait["LARGE"] = "large";
-    Trait["BURROWING"] = "burrowing";
-    Trait["SWIMMING"] = "swimming";
-})(Trait || (Trait = {}));
-const traitOrder = [Trait.LARGE, Trait.BURROWING, Trait.SWIMMING];
-function sortTraits(traits) {
-    return traits.sort((a, b) => traitOrder.indexOf(a) - traitOrder.indexOf(b));
-}
-var Diet;
-(function (Diet) {
-    // herbivore is lack of Diet
-    Diet["CARNIVORE"] = "carnivore";
-    Diet["OMNIVORE"] = "omnivore";
-    Diet["SCAVENGER"] = "scavenger";
-})(Diet || (Diet = {}));
-const allTraitsAndDiets = [...Object.values(Trait), ...Object.values(Diet)];
-function getRandomTraitOrDiet() {
-    return allTraitsAndDiets[Math.floor(Math.random() * allTraitsAndDiets.length)];
-}
-window.onload = function () {
-    nextPhase();
-};
-function clearLog() {
-    document.getElementById("log").innerHTML = "";
-}
-function log(message = "") {
-    const p = document.createElement("p");
-    p.innerText = message;
-    document.getElementById("log").appendChild(p);
-}
-function setPhaseTitle() {
-    const title = document.getElementById("phase-title");
-    switch (state.phase) {
-        case Phase.Development:
-            title.innerText = "Development Phase";
-            break;
-        case Phase.Feeding:
-            title.innerText = "Feeding Phase";
-            break;
-    }
-}
-function setBackground() {
-    switch (state.phase) {
-        case Phase.Development:
-            document.body.style.backgroundColor = "#f0f7f6";
-            break;
-        case Phase.Feeding:
-            document.body.style.backgroundColor = "#fffef2";
-            break;
-    }
-}
-function resetSpecies() {
-    document.getElementById("species").innerHTML = "";
-}
-function addToSpecies(line) {
-    const speciesDiv = document.getElementById("species");
-    const p = document.createElement("p");
-    p.innerText = line;
-    speciesDiv.appendChild(p);
-}
-function showHideLog() {
-    const logDiv = document.getElementById("log");
-    const logTitle = document.getElementById("log-title");
-    if (logDiv.classList.contains("hide")) {
-        logDiv.classList.remove("hide");
-        logTitle.innerText = "Log -";
+window.addEventListener('DOMContentLoaded', () => nextIteration(1));
+function togglePlay() {
+    const btn = document.getElementById("play-pause-btn");
+    if (playInterval !== null) {
+        pause();
+        btn.textContent = "▶ Play";
     }
     else {
-        logDiv.classList.add("hide");
-        logTitle.innerText = "Log +";
+        play();
+        btn.textContent = "⏸ Pause";
     }
+}
+function energyLabel(energy) {
+    const energyLabels = ["🔴", "🟠", "🟡", "🟢"];
+    if (energy > energyLabels.length - 1) {
+        console.error(`Energy ${energy} is out of bounds for energy labels`);
+        return "?";
+    }
+    if (energy < 0) {
+        return energyLabels[0];
+    }
+    return energyLabels[Math.ceil(energy)];
+}
+function healthLabel(individual) {
+    if (individual.dead) {
+        return individual.starved ? "💀🍽️" : "💀🍗";
+    }
+    if (individual.getAge() == 0) {
+        return "👶";
+    }
+    return "🫀";
+}
+// dict with individual id as key and event string as value
+let actions = {};
+function saveEvent(individualId, event) {
+    if (actions[individualId]) {
+        console.error(`Individual ${individualId} already has a saved action: ${actions[individualId]}`);
+    }
+    actions[individualId] = event;
+}
+function clearActions() {
+    actions = {};
+}
+function updateUI() {
+    updateTitles();
+    showIndividuals();
+    showEnvironment();
+}
+function updateTitles() {
+    document.getElementById("iteration-title").innerText = `Iteration ${state.day}`;
+    document.getElementById("individuals-title").innerText = `Individuals (${state.individualsArray.length})`;
+}
+function addSeparatorRow(table, colSpan) {
+    const separatorRow = document.createElement("tr");
+    separatorRow.classList.add("section-separator");
+    const separatorCell = document.createElement("td");
+    separatorCell.colSpan = colSpan;
+    separatorRow.appendChild(separatorCell);
+    table.appendChild(separatorRow);
+}
+var IndividualCategory;
+(function (IndividualCategory) {
+    IndividualCategory[IndividualCategory["Newborn"] = 4] = "Newborn";
+    IndividualCategory[IndividualCategory["Starved"] = 3] = "Starved";
+    IndividualCategory[IndividualCategory["Eaten"] = 2] = "Eaten";
+    IndividualCategory[IndividualCategory["Alive"] = 1] = "Alive";
+})(IndividualCategory || (IndividualCategory = {}));
+function getCategory(individual) {
+    if (individual.getAge() == 0)
+        return IndividualCategory.Newborn;
+    if (individual.starved)
+        return IndividualCategory.Starved;
+    if (individual.eaten)
+        return IndividualCategory.Eaten;
+    return IndividualCategory.Alive;
+}
+function sortIndividuals(individuals) {
+    return individuals.sort((a, b) => {
+        const categoryA = getCategory(a);
+        const categoryB = getCategory(b);
+        // sort by category, offspring descending, age descending, id ascending
+        if (categoryA !== categoryB) {
+            return categoryA - categoryB;
+        }
+        const offspringA = a.getOffspring().reduce((sum, val) => sum + val, 0);
+        const offspringB = b.getOffspring().reduce((sum, val) => sum + val, 0);
+        return offspringB - offspringA ||
+            b.getAge() - a.getAge() ||
+            a.id.localeCompare(b.id);
+    });
+}
+function valuesForIndividual(individual) {
+    const values = {
+        "ID": individual.id,
+        "Age": individual.getAge().toString(),
+        "Diet": individual.diet.toString(),
+        "Action": actions[individual.id] ?? "x",
+        "Health ▼": healthLabel(individual),
+        "Energy": energyLabel(individual.energy),
+        "Shelter": individual.shelter ? "🛡️" : "👁️",
+        "Offspring": individual.getOffspring().toString(),
+        "Ancestors": individual.getParentIds().join(", "),
+        "Traits": individual.traits.sort().join(", "),
+    };
+    Object.entries(values).forEach(([key, value]) => {
+        if (value === undefined) {
+            console.error(`Value for ${key} is undefined for individual ${individual.id}`);
+            console.log(individual);
+        }
+    });
+    return values;
+}
+function showIndividuals() {
+    const individualsDiv = document.getElementById("individuals");
+    individualsDiv.innerHTML = "";
+    if (state.individualsArray.length === 0)
+        return;
+    const table = document.createElement("table");
+    const tableWidth = Object.keys(valuesForIndividual(state.individualsArray[0])).length;
+    addHeader(table);
+    const sortedIndividuals = sortIndividuals(state.individualsArray);
+    addSeparatorRow(table, tableWidth);
+    let previousCategory = null;
+    for (let individual of sortedIndividuals) {
+        const currentCategory = getCategory(individual);
+        const shouldAddSeparator = previousCategory && previousCategory !== currentCategory;
+        if (shouldAddSeparator) {
+            addSeparatorRow(table, tableWidth);
+        }
+        previousCategory = currentCategory;
+        addIndividualRow(table, individual);
+    }
+    addSeparatorRow(table, tableWidth);
+    individualsDiv.appendChild(table);
+}
+function addHeader(table) {
+    const headerRow = document.createElement("tr");
+    const headers = Object.keys(valuesForIndividual(state.individualsArray[0]));
+    headers.forEach(header => {
+        const th = document.createElement("th");
+        th.innerText = header;
+        headerRow.appendChild(th);
+    });
+    table.appendChild(headerRow);
+}
+function addIndividualRow(table, individual) {
+    const row = document.createElement("tr");
+    const values = valuesForIndividual(individual);
+    Object.values(values).forEach(value => {
+        const td = document.createElement("td");
+        td.innerText = value.toString();
+        row.appendChild(td);
+    });
+    table.appendChild(row);
+}
+function showEnvironment() {
+    const environmentDiv = document.getElementById("environment");
+    environmentDiv.innerHTML = "";
+    const food = document.createElement("p");
+    food.innerText = `${state.environment.initialFood} -> ${state.environment.food} food`;
+    environmentDiv.appendChild(food);
+    const shelter = document.createElement("p");
+    shelter.innerText = `${state.environment.initialShelter} -> ${state.environment.shelter} shelter`;
+    environmentDiv.appendChild(shelter);
 }

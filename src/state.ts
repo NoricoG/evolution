@@ -1,185 +1,84 @@
-enum Phase {
-    Development,
-    Feeding,
-    Extinction,
-}
+class State {
+    day = 0;
 
-class Climate {
-    food: number;
-    shelter: number;
+    individuals: { [id: string]: Individual } = {};
 
-    constructor() {
-        this.food = 2 + Math.ceil(Math.random() * 6) + Math.ceil(Math.random() * 6);
-        this.shelter = Math.ceil(Math.random() * 6);
+    individualIdCounter = -1;
+
+    environment = new Environment(this);
+
+    get individualsArray(): Individual[] {
+        return Object.values(this.individuals);
+    }
+
+    nextIndividualId(): string {
+        this.individualIdCounter++;
+
+        // CVC pattern
+        // 0 Bab, 1 Cab, ..., 19 Yab, 20 Zab
+        // 21 Beb, ..., 41 Zeb
+        // ...
+        // 84 Bub, ..., 104 Zub
+        // 105 Bac, ..., 125 Zac
+        // ...
+        // 189 Buc, ..., 209 Zuc
+        // ...
+        // 2100 Baz, ..., 2120 Zaz
+        // ...
+        // 2184 Buz, ..., 2204 Zuz
+        // 2205 Bab, starting over
+        function translate(num: number): string {
+            const consonants = 'bcdfghjklmnpqrstvwxyz';
+            const vowels = 'aeiou';
+
+            const c = consonants.length; // 21
+            const v = vowels.length;     // 5
+
+            const firstIdx = num % c;
+            const vowelIdx = Math.floor(num / c) % v;
+            const lastIdx = Math.floor(num / (c * v)) % c;
+
+            const name = consonants[firstIdx].toUpperCase() + vowels[vowelIdx] + consonants[lastIdx];
+            return name;
+        }
+
+        return translate(this.individualIdCounter);
+    }
+
+    addIndividual(individual: Individual) {
+        individual.id = this.nextIndividualId();
+        this.individuals[individual.id] = individual;
+    }
+
+    dieIndividual(individualId: string) {
+        this.individuals[individualId].dead = true;
+        const parent = this.individuals[individualId].parent;
+        if (parent) {
+            parent.children = parent.children.filter(child => child.id !== individualId);
+        }
+        this.environment.bodies.push(individualId);
+    }
+
+    livingIndividualCount(): number {
+        return Object.values(this.individuals).filter(individual => !individual.dead).length;
     }
 }
-class State {
-    initial: boolean = true;
 
-    phase = Phase.Development;
-    species: Species[] = [];
-    speciesId: string = " @"; // will be incremented to " A"
+class Environment {
+    initialFood: number;
+    food: number;
+    initialShelter: number;
+    shelter: number;
+    bodies: string[];
 
-    climate = new Climate();
-
-    nextSpeciesId(): string {
-        // increment last character
-        this.speciesId = this.speciesId[0] + String.fromCharCode(this.speciesId.charCodeAt(1) + 1);
-
-        // prevent collisions
-        if (this.species.some(species => species.id == this.speciesId)) {
-            return this.nextSpeciesId();
-        }
-
-        // handle overflow of last character
-        if (this.speciesId[1] > "Z") {
-            if (this.speciesId[0] == " ") {
-                this.speciesId = "AA";
-            } else {
-                if (this.speciesId[0] < "Z") {
-                    // increment first character and reset last character to A
-                    this.speciesId = String.fromCharCode(this.speciesId.charCodeAt(0) + 1) + "A";
-                } else {
-                    console.log("Ran out of two character ids, cycling back to A");
-                    this.speciesId = " A";
-                }
-            }
-        }
-
-        return this.speciesId;
+    constructor(state: State) {
+        const livingCount = state.livingIndividualCount();
+        this.initialFood = Math.round((0.1 + Math.random()) * livingCount);
+        this.food = this.initialFood;
+        this.initialShelter = Math.ceil(Math.random() * 6);
+        this.shelter = this.initialShelter;
+        this.bodies = [];
     }
 }
 
 var state = new State();
-
-function nextPhase() {
-    setPhaseTitle();
-    setBackground();
-    clearLog();
-
-    var speciesBefore: { [key: string]: { individuals: number, traits: string } };
-
-    switch (state.phase) {
-        case Phase.Development:
-            speciesBefore = getSpeciesBefore();
-            doDevelopment();
-
-            logAfterDevelopment(speciesBefore);
-            state.phase = Phase.Feeding;
-            break;
-
-        case Phase.Feeding:
-            speciesBefore = getSpeciesBefore();
-            const deaths = doFeeding();
-
-            logAfterFeeding(speciesBefore, deaths);
-            state.phase = Phase.Development;
-            break;
-    }
-}
-
-function getSpeciesBefore(): { [key: string]: { individuals: number, traits: string } } {
-    const speciesBefore = {};
-    for (let species of state.species) {
-        speciesBefore[species.id] = { individuals: species.individuals.length, traits: species.getTraitsString() };
-    }
-    return speciesBefore;
-}
-
-function logAfterDevelopment(speciesBefore: { [key: string]: { individuals: number, traits: string } }) {
-    const speciesAfter = {};
-    for (let species of state.species) {
-        speciesAfter[species.id] = { individuals: species.individuals.length, traits: species.getTraitsString() };
-    }
-    const allSpeciesIds = new Set([...Object.keys(speciesBefore), ...Object.keys(speciesAfter)]);
-
-    resetSpecies();
-    for (let speciesId of allSpeciesIds) {
-        const before = speciesBefore[speciesId] || { individuals: 0, traits: "" };
-        const after = speciesAfter[speciesId] || { individuals: 0, traits: "" };
-
-        let message = `${speciesId}: `;
-        const sameCount = before.individuals === after.individuals;
-        const sameTraits = before.traits === after.traits;
-
-        if (sameCount && sameTraits) {
-            message += `${before.individuals} ${before.traits}`;
-            if (before.individuals != 1) {
-                message += "s";
-            }
-            addToSpecies(message);
-            continue;
-        }
-
-        message += before.individuals;
-        if (!sameTraits && before.traits !== "") {
-            message += ` ${before.traits}`;
-            if (before.individuals != 1) {
-                message += "s";
-            }
-        }
-
-        message += " -> ";
-        if (!sameCount) {
-            message += after.individuals;
-        }
-        message += ` ${after.traits}`;
-        if (after.individuals != 1) {
-            message += "s";
-        }
-
-        addToSpecies(message);
-    }
-}
-
-
-function logAfterFeeding(before: { [key: string]: { individuals: number, traits: string } }, deaths: [Individual[], Individual[]]) {
-    const individualsAfter: { [key: string]: number } = {};
-    for (let species of state.species) {
-        individualsAfter[species.id] = species.individuals.length;
-    }
-    const allSpeciesIds = new Set([...Object.keys(before), ...Object.keys(individualsAfter)]);
-
-    const speciesEaten: { [key: string]: number } = {};
-    const speciesStarved: { [key: string]: number } = {};
-    for (const eaten of deaths[0]) {
-        const speciesId = eaten.species.id;
-        speciesEaten[speciesId] = (speciesEaten[speciesId] || 0) + 1;
-    }
-    for (const starved of deaths[1]) {
-        const speciesId = starved.species.id;
-        speciesStarved[speciesId] = (speciesStarved[speciesId] || 0) + 1;
-    }
-
-    resetSpecies();
-    for (let speciesId of allSpeciesIds) {
-        const traits = before[speciesId]?.traits || "";
-        const beforeCount = before[speciesId]?.individuals || 0;
-        const afterCount = individualsAfter[speciesId] || 0;
-
-        let message = `${speciesId}: `;
-        message += beforeCount == afterCount
-            ? `${beforeCount} `
-            : `${beforeCount} -> ${afterCount} `;
-
-        message += `${traits}`;
-        if (beforeCount != 1 || afterCount != 1) {
-            message += "s";
-        }
-
-        const eatenCount = speciesEaten[speciesId] || 0;
-        const starvedCount = speciesStarved[speciesId] || 0;
-        if (eatenCount || starvedCount) {
-            const parts: string[] = [];
-            if (eatenCount) {
-                parts.push(`${eatenCount} eaten`);
-            }
-            if (starvedCount) {
-                parts.push(`${starvedCount} starved`);
-            }
-            message += ` (${parts.join(", ")})`;
-        }
-
-        addToSpecies(message);
-    }
-}
