@@ -40,8 +40,8 @@ function nextIteration(iterations: number) {
 }
 
 function addIndividuals() {
-    const startingIndividuals = 10;
-    const migratingIndividuals = Math.max(2, 10 - state.individualsArray.length);
+    const startingIndividuals = 20;
+    const migratingIndividuals = Math.max(2, startingIndividuals - state.individualsArray.length);
 
     const starting = state.individualsArray.length == 0;
     const extraIndividuals = starting ? startingIndividuals : migratingIndividuals;

@@ -1,4 +1,4 @@
-const maxEnergy = 3;
+const maxEnergy = 4;
 const mutationChance = 0.1;
 
 enum Trait {
@@ -130,7 +130,10 @@ class Individual {
         // remove last generation which is empty
         offspring.pop();
 
-        const offSpringCounts = offspring.map(generation => generation.length);
+        const offSpringCounts = offspring.map(generation => generation.filter(individual => !individual.dead).length);
+        if (offSpringCounts[offSpringCounts.length - 1] == 0) {
+            offSpringCounts.pop();
+        }
         return offSpringCounts;
     }
 
@@ -164,5 +167,9 @@ class Individual {
             return true;
         }
         return false;
+    }
+
+    hasHunger(): boolean {
+        return this.energy <= maxEnergy - 1;
     }
 }

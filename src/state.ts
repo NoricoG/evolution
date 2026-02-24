@@ -47,15 +47,21 @@ class State {
 
     addIndividual(individual: Individual) {
         individual.id = this.nextIndividualId();
+        if (individual.diet == Diet.HERBIVORE) {
+            individual.id += "e";
+        } else if (individual.diet == Diet.OMNIVORE) {
+            individual.id += "o";
+        } else if (individual.diet == Diet.CARNIVORE) {
+            individual.id += "a";
+        } else if (individual.diet == Diet.SCAVENGER) {
+            individual.id += "i";
+        }
+
         this.individuals[individual.id] = individual;
     }
 
     dieIndividual(individualId: string) {
         this.individuals[individualId].dead = true;
-        const parent = this.individuals[individualId].parent;
-        if (parent) {
-            parent.children = parent.children.filter(child => child.id !== individualId);
-        }
         this.environment.bodies.push(individualId);
     }
 
@@ -73,7 +79,7 @@ class Environment {
 
     constructor(state: State) {
         const livingCount = state.livingIndividualCount();
-        this.initialFood = Math.round((0.1 + Math.random()) * livingCount);
+        this.initialFood = Math.round((0.1 + 2 * Math.random()) * livingCount);
         this.food = this.initialFood;
         this.initialShelter = Math.ceil(Math.random() * 6);
         this.shelter = this.initialShelter;

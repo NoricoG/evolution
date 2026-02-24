@@ -17,13 +17,12 @@ function togglePlay() {
 function energyLabel(energy: number): string {
     const energyLabels = ["🔴", "🟠", "🟡", "🟢"];
     if (energy > energyLabels.length - 1) {
-        console.error(`Energy ${energy} is out of bounds for energy labels`);
-        return "?";
+        return energyLabels[energyLabels.length - 1];
     }
     if (energy < 0) {
         return energyLabels[0];
     }
-    return energyLabels[Math.ceil(energy)];
+    return energyLabels[Math.round(energy)];
 }
 
 function healthLabel(individual: Individual): string {
@@ -34,6 +33,16 @@ function healthLabel(individual: Individual): string {
         return "👶";
     }
     return "🫀";
+}
+
+function ancestorLabel(individual: Individual): string {
+    if (!individual.parent) {
+        return "";
+    }
+    if (individual.parent.dead) {
+        return `${individual.parent.id} †`;
+    }
+    return individual.getParentIds().join(", ");
 }
 
 // dict with individual id as key and event string as value
@@ -114,7 +123,7 @@ function valuesForIndividual(individual: Individual): Record<string, string> {
         "Energy": energyLabel(individual.energy),
         "Shelter": individual.shelter ? "🛡️" : "👁️",
         "Offspring": individual.getOffspring().toString(),
-        "Ancestors": individual.getParentIds().join(", "),
+        "Ancestors": ancestorLabel(individual),
         "Traits": individual.traits.sort().join(", "),
     };
 

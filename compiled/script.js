@@ -30,8 +30,8 @@ function nextIteration(iterations) {
     updateUI();
 }
 function addIndividuals() {
-    const startingIndividuals = 10;
-    const migratingIndividuals = Math.max(2, 10 - state.individualsArray.length);
+    const startingIndividuals = 20;
+    const migratingIndividuals = Math.max(2, startingIndividuals - state.individualsArray.length);
     const starting = state.individualsArray.length == 0;
     const extraIndividuals = starting ? startingIndividuals : migratingIndividuals;
     for (let i = 0; i < extraIndividuals; i++) {
@@ -117,7 +117,7 @@ class HideAction extends Action {
 class GatherAction extends Action {
     leftShelter = false;
     isPossible() {
-        return this.individual.energy < maxEnergy && state.environment.food > 0 && this.individual.diet != Diet.CARNIVORE;
+        return this.individual.hasHunger() && state.environment.food > 0 && this.individual.diet != Diet.CARNIVORE;
     }
     execute() {
         this.leftShelter = this.individual.leaveShelter();
@@ -144,7 +144,7 @@ class ReproduceAction extends Action {
 class AddTraitAction extends Action {
     gainedTrait = null;
     isPossible() {
-        return this.individual.traits.length < 3 && this.individual.energy >= maxEnergy && this.individual.getAge() < 3;
+        return this.individual.traits.length < 3 && this.individual.energy >= maxEnergy - 1 && this.individual.getAge() < 3;
     }
     execute() {
         const newTraits = Object.values(Trait).filter(trait => !this.individual.traits.includes(trait));
@@ -163,7 +163,7 @@ class HuntAction extends Action {
         if (this.individual.diet !== Diet.CARNIVORE && this.individual.diet !== Diet.OMNIVORE) {
             return false;
         }
-        if (this.individual.energy >= maxEnergy) {
+        if (!this.individual.hasHunger()) {
             return false;
         }
         this.possibleVictims = state.individualsArray.filter(v => v.id !== this.individual.id && // don't hunt yourself
@@ -195,7 +195,7 @@ class ScavengeAction extends Action {
     bodyId = "";
     leftShelter = false;
     isPossible() {
-        return this.individual.diet === Diet.SCAVENGER && this.individual.energy < maxEnergy && state.environment.bodies.length > 0;
+        return this.individual.diet === Diet.SCAVENGER && this.individual.hasHunger() && state.environment.bodies.length > 0;
     }
     execute() {
         this.leftShelter = this.individual.leaveShelter();
@@ -223,7 +223,7 @@ class FeedChildAction extends Action {
     }
 }
 const allActions = [ReproduceAction, AddTraitAction, HideAction, HuntAction, GatherAction, ScavengeAction, FeedChildAction];
-const maxEnergy = 3;
+const maxEnergy = 4;
 const mutationChance = 0.1;
 var Trait;
 (function (Trait) {
@@ -328,7 +328,10 @@ class Individual {
         }
         // remove last generation which is empty
         offspring.pop();
-        const offSpringCounts = offspring.map(generation => generation.length);
+        const offSpringCounts = offspring.map(generation => generation.filter(individual => !individual.dead).length);
+        if (offSpringCounts[offSpringCounts.length - 1] == 0) {
+            offSpringCounts.pop();
+        }
         return offSpringCounts;
     }
     // returns the first parent and any living older parents, from old to new
@@ -356,6 +359,9 @@ class Individual {
             return true;
         }
         return false;
+    }
+    hasHunger() {
+        return this.energy <= maxEnergy - 1;
     }
 }
 class State {
@@ -396,14 +402,22 @@ class State {
     }
     addIndividual(individual) {
         individual.id = this.nextIndividualId();
+        if (individual.diet == Diet.HERBIVORE) {
+            individual.id += "e";
+        }
+        else if (individual.diet == Diet.OMNIVORE) {
+            individual.id += "o";
+        }
+        else if (individual.diet == Diet.CARNIVORE) {
+            individual.id += "a";
+        }
+        else if (individual.diet == Diet.SCAVENGER) {
+            individual.id += "i";
+        }
         this.individuals[individual.id] = individual;
     }
     dieIndividual(individualId) {
         this.individuals[individualId].dead = true;
-        const parent = this.individuals[individualId].parent;
-        if (parent) {
-            parent.children = parent.children.filter(child => child.id !== individualId);
-        }
         this.environment.bodies.push(individualId);
     }
     livingIndividualCount() {
@@ -418,7 +432,7 @@ class Environment {
     bodies;
     constructor(state) {
         const livingCount = state.livingIndividualCount();
-        this.initialFood = Math.round((0.1 + Math.random()) * livingCount);
+        this.initialFood = Math.round((0.1 + 2 * Math.random()) * livingCount);
         this.food = this.initialFood;
         this.initialShelter = Math.ceil(Math.random() * 6);
         this.shelter = this.initialShelter;
@@ -441,13 +455,12 @@ function togglePlay() {
 function energyLabel(energy) {
     const energyLabels = ["🔴", "🟠", "🟡", "🟢"];
     if (energy > energyLabels.length - 1) {
-        console.error(`Energy ${energy} is out of bounds for energy labels`);
-        return "?";
+        return energyLabels[energyLabels.length - 1];
     }
     if (energy < 0) {
         return energyLabels[0];
     }
-    return energyLabels[Math.ceil(energy)];
+    return energyLabels[Math.round(energy)];
 }
 function healthLabel(individual) {
     if (individual.dead) {
@@ -457,6 +470,15 @@ function healthLabel(individual) {
         return "👶";
     }
     return "🫀";
+}
+function ancestorLabel(individual) {
+    if (!individual.parent) {
+        return "";
+    }
+    if (individual.parent.dead) {
+        return `${individual.parent.id} †`;
+    }
+    return individual.getParentIds().join(", ");
 }
 // dict with individual id as key and event string as value
 let actions = {};
@@ -527,7 +549,7 @@ function valuesForIndividual(individual) {
         "Energy": energyLabel(individual.energy),
         "Shelter": individual.shelter ? "🛡️" : "👁️",
         "Offspring": individual.getOffspring().toString(),
-        "Ancestors": individual.getParentIds().join(", "),
+        "Ancestors": ancestorLabel(individual),
         "Traits": individual.traits.sort().join(", "),
     };
     Object.entries(values).forEach(([key, value]) => {

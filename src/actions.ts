@@ -36,7 +36,7 @@ class GatherAction extends Action {
 
 
     isPossible(): boolean {
-        return this.individual.energy < maxEnergy && state.environment.food > 0 && this.individual.diet != Diet.CARNIVORE;
+        return this.individual.hasHunger() && state.environment.food > 0 && this.individual.diet != Diet.CARNIVORE;
     }
 
     execute() {
@@ -74,7 +74,7 @@ class AddTraitAction extends Action {
     gainedTrait: Trait | null = null;
 
     isPossible(): boolean {
-        return this.individual.traits.length < 3 && this.individual.energy >= maxEnergy && this.individual.getAge() < 3;
+        return this.individual.traits.length < 3 && this.individual.energy >= maxEnergy - 1 && this.individual.getAge() < 3;
     }
 
     execute() {
@@ -98,7 +98,7 @@ class HuntAction extends Action {
             return false;
         }
 
-        if (this.individual.energy >= maxEnergy) {
+        if (!this.individual.hasHunger()) {
             return false;
         }
 
@@ -142,7 +142,7 @@ class ScavengeAction extends Action {
     leftShelter = false;
 
     isPossible(): boolean {
-        return this.individual.diet === Diet.SCAVENGER && this.individual.energy < maxEnergy && state.environment.bodies.length > 0;
+        return this.individual.diet === Diet.SCAVENGER && this.individual.hasHunger() && state.environment.bodies.length > 0;
     }
 
     execute() {
