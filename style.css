@@ -6,16 +6,6 @@ p {
     margin: 0;
 }
 
-#iteration-section {
-    display: flex;
-    align-items: center;
-    gap: 20px;
-}
-
-#iteration-title {
-    margin: 0;
-}
-
 .big-button {
     padding: 10px 20px;
     font-size: 1em;
@@ -36,19 +26,4 @@ th {
 td {
     padding: 8px;
     text-align: center;
-}
-
-td:nth-child(odd) {
-    background-color: #fafafa;
-}
-
-td:nth-child(even) {
-    background-color: #ffffff;
-}
-
-.section-separator td {
-    border-top: 1px solid #ccc;
-    border-bottom: 1px solid #ccc;
-    height: 0;
-    padding: 0;
 }

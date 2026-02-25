@@ -1,5 +1,9 @@
 const maxEnergy = 4;
-const mutationChance = 0.1;
+const loseTraitChance = 0.1;
+const gainTraitChance = 0.2;
+const weightMutationRange = 0.3;
+
+const adultAge = 2;
 
 enum Trait {
     LARGE = "large",
@@ -14,14 +18,25 @@ enum Diet {
     SCAVENGER = "scavenger"
 }
 
+enum IndividualCategory {
+    Adult = 1,
+    Eaten = 2,
+    Starved = 3,
+    Young = 4
+}
 
 class Individual {
     id: string;
     born: number;
     parent: Individual | null;
     dead: boolean = false;
+    deathDay: number | null = null;
     eaten: boolean = false;
     starved: boolean = false;
+
+    strategy: Strategy;
+
+    lastEvent = "";
 
     traits: Trait[] = [];
     diet: Diet;
@@ -31,18 +46,20 @@ class Individual {
 
     children: Individual[] = [];
 
-    constructor(parent: Individual | null, traits: Trait[], diet: Diet, extraAge: number) {
+    constructor(parent: Individual | null, traits: Trait[], diet: Diet, strategy: Strategy) {
         this.id = "";  // assigned by state
-        this.born = state.day - extraAge;
+        this.born = state.day;
 
         this.parent = parent;
 
+        this.strategy = strategy;
+
         this.traits = traits;
-        if (Math.random() < mutationChance / 2 && this.traits.length > 0) {
+        if (Math.random() < loseTraitChance && this.traits.length > 0) {
             // remove random trait
             this.traits.splice(Math.floor(Math.random() * this.traits.length), 1);
         }
-        if (Math.random() < mutationChance) {
+        if (Math.random() < gainTraitChance) {
             const possibleNewTraits = Object.values(Trait).filter(trait => !this.traits.includes(trait));
             if (possibleNewTraits.length > 0) {
                 this.traits.push(possibleNewTraits[Math.floor(Math.random() * possibleNewTraits.length)]);
@@ -55,6 +72,13 @@ class Individual {
 
     getAge(): number {
         return state.day - this.born;
+    }
+
+    getCategory(): IndividualCategory {
+        if (this.starved) return IndividualCategory.Starved;
+        if (this.eaten) return IndividualCategory.Eaten;
+        if (this.getAge() < adultAge) return IndividualCategory.Young;
+        return IndividualCategory.Adult;
     }
 
     canBeHuntedBy(predator: Individual): boolean {
@@ -107,16 +131,39 @@ class Individual {
     }
 
     procreate(): Individual {
-        const baby = new Individual(this, this.traits, this.diet, 0);
+        const evolvedStrategy = this.getEvolvedStrategy(this.strategy);
+        const baby = new Individual(this, this.traits, this.diet, evolvedStrategy);
         state.addIndividual(baby);
         this.children.push(baby);
 
         return baby;
     }
 
+    getEvolvedStrategy(strategy: Strategy): Strategy {
+        const newWeights = Object.fromEntries(
+            Object.entries(strategy.weights).map(([key, weight]) => {
+                if (weight === null) {
+                    return [key, null];
+                }
+                const mutation = Math.random() * weightMutationRange - weightMutationRange / 2;
+                let newWeight = weight + mutation;
+                if (newWeight < minWeight) {
+                    newWeight = minWeight;
+                }
+                if (newWeight > maxWeight) {
+                    newWeight = maxWeight;
+                }
+                return [key, newWeight];
+            })
+        );
+
+        const newStrategy = new Strategy(newWeights, this.diet);
+        return newStrategy;
+    }
+
     getOffspring(): number[] {
-        var offspring = [];
-        var generation = 1;
+        let offspring = [];
+        let generation = 1;
         offspring.push(this.children);
 
         while (offspring[generation - 1].length > 0) {
@@ -171,5 +218,11 @@ class Individual {
 
     hasHunger(): boolean {
         return this.energy <= maxEnergy - 1;
+    }
+
+    die() {
+        this.dead = true;
+        this.deathDay = state.day;
+        this.leaveShelter();
     }
 }

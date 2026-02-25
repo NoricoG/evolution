@@ -5,8 +5,9 @@ const debugAction = null;
 
 let playInterval: ReturnType<typeof setInterval> | null = null;
 
-function play() {
-    playInterval = setInterval(() => nextIteration(1), 1000);
+function play(fast: boolean) {
+    const wait = fast ? 500 : 1000;
+    playInterval = setInterval(() => nextIteration(1), wait);
 }
 
 function pause() {
@@ -18,15 +19,15 @@ function nextIteration(iterations: number) {
     for (let i = 0; i < iterations; i++) {
         // cleanup
         for (let individualId of Object.keys(state.individuals)) {
-            if (state.individuals[individualId].dead) {
+            if (state.individuals[individualId].dead && state.individuals[individualId].deathDay < state.day - 1) {
                 delete state.individuals[individualId];
             }
         }
-        clearActions();
 
         state.day++;
         addIndividuals();
-        state.environment = new Environment(state);
+
+        state.environment = new Environment(state, state.environment.freshBodies);
 
         actAllIndividuals();
         starveIndividuals();
@@ -41,14 +42,14 @@ function nextIteration(iterations: number) {
 
 function addIndividuals() {
     const startingIndividuals = 20;
-    const migratingIndividuals = Math.max(2, startingIndividuals - state.individualsArray.length);
+    const migratingIndividuals = Math.max(0, startingIndividuals - state.individualsArray.length);
 
     const starting = state.individualsArray.length == 0;
     const extraIndividuals = starting ? startingIndividuals : migratingIndividuals;
 
     for (let i = 0; i < extraIndividuals; i++) {
         const randomDiet = Object.values(Diet)[Math.floor(Math.random() * Object.values(Diet).length)];
-        const newIndividual = new Individual(null, [], randomDiet, 1);
+        const newIndividual = new Individual(null, [], randomDiet, Strategy.randomStrategy(randomDiet));
         state.addIndividual(newIndividual);
     }
 }
@@ -85,7 +86,7 @@ function actIndividual(individual: Individual) {
     }
 
     if (possibleActions.length > 0) {
-        var action = possibleActions[Math.floor(Math.random() * possibleActions.length)];
+        let action = individual.strategy.decide(possibleActions, individual);
 
         // debug specific action
         if (debugAction && possibleActions.some(a => a instanceof debugAction) && !(action instanceof debugAction)) {
@@ -96,14 +97,11 @@ function actIndividual(individual: Individual) {
         }
 
         action.execute();
-        saveEvent(action.individual.id, action.toString());
-
-        individual.energy -= individual.energyNeed();
-
-        return true;
+        individual.lastEvent = action.toString();
     } else {
-        saveEvent(individual.id, `x`);
+        individual.lastEvent = "x";
     }
+    individual.energy -= individual.energyNeed();
 }
 
 function starveIndividuals() {
@@ -112,7 +110,8 @@ function starveIndividuals() {
     for (let individual of state.individualsArray) {
         if (individual.energy <= 0 && !individual.dead && individual.getAge() > 0) {
             individual.starved = true;
-            state.dieIndividual(individual.id);
+            individual.die();
+            state.environment.freshBodies.push(individual.id);
             starvedIndividuals++;
         }
     }

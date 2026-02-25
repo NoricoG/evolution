@@ -2,6 +2,7 @@ window.addEventListener('DOMContentLoaded', () =>
     nextIteration(1)
 );
 
+let playFast = false;
 
 function togglePlay() {
     const btn = document.getElementById("play-pause-btn") as HTMLButtonElement;
@@ -9,9 +10,21 @@ function togglePlay() {
         pause();
         btn.textContent = "▶ Play";
     } else {
-        play();
+        play(playFast);
         btn.textContent = "⏸ Pause";
     }
+}
+
+function toggleSpeed() {
+    const btn = document.getElementById("speed-btn") as HTMLButtonElement;
+    if (playInterval !== null) {
+        pause();
+    }
+    playFast = !playFast;
+    play(playFast);
+    document.getElementById("play-pause-btn").textContent = "⏸ Pause";
+
+    btn.textContent = playFast ? "Slower" : "Faster";
 }
 
 function energyLabel(energy: number): string {
@@ -45,25 +58,24 @@ function ancestorLabel(individual: Individual): string {
     return individual.getParentIds().join(", ");
 }
 
-// dict with individual id as key and event string as value
-let actions: Record<string, string> = {};
-
-function saveEvent(individualId: string, event: string) {
-    if (actions[individualId]) {
-        console.error(`Individual ${individualId} already has a saved action: ${actions[individualId]}`);
+function traitLabel(traits: Trait[]): string {
+    let label = "";
+    if (traits.includes(Trait.BURROW)) {
+        label += "🕳️";
     }
-
-    actions[individualId] = event;
-}
-
-function clearActions() {
-    actions = {};
+    if (traits.includes(Trait.LARGE)) {
+        label += "🦣";
+    }
+    if (traits.includes(Trait.SWIM)) {
+        label += "🏊🏻‍♂️";
+    }
+    return label;
 }
 
 function updateUI() {
     updateTitles();
-    showIndividuals();
     showEnvironment();
+    showIndividuals();
 }
 
 function updateTitles() {
@@ -71,39 +83,8 @@ function updateTitles() {
     document.getElementById("individuals-title").innerText = `Individuals (${state.individualsArray.length})`;
 }
 
-function addSeparatorRow(table: HTMLTableElement, colSpan: number) {
-    const separatorRow = document.createElement("tr");
-    separatorRow.classList.add("section-separator");
-    const separatorCell = document.createElement("td");
-    separatorCell.colSpan = colSpan;
-    separatorRow.appendChild(separatorCell);
-    table.appendChild(separatorRow);
-}
-
-enum IndividualCategory {
-    Newborn = 4,
-    Starved = 3,
-    Eaten = 2,
-    Alive = 1
-}
-
-function getCategory(individual: Individual): IndividualCategory {
-    if (individual.getAge() == 0) return IndividualCategory.Newborn;
-    if (individual.starved) return IndividualCategory.Starved;
-    if (individual.eaten) return IndividualCategory.Eaten;
-    return IndividualCategory.Alive;
-}
-
-function sortIndividuals(individuals: Individual[]): Individual[] {
+function sortIndividualsWithinCategory(individuals: Individual[]): Individual[] {
     return individuals.sort((a: Individual, b: Individual) => {
-        const categoryA = getCategory(a);
-        const categoryB = getCategory(b);
-
-        // sort by category, offspring descending, age descending, id ascending
-        if (categoryA !== categoryB) {
-            return categoryA - categoryB;
-        }
-
         const offspringA = a.getOffspring().reduce((sum, val) => sum + val, 0);
         const offspringB = b.getOffspring().reduce((sum, val) => sum + val, 0);
 
@@ -117,14 +98,15 @@ function valuesForIndividual(individual: Individual): Record<string, string> {
     const values = {
         "ID": individual.id,
         "Age": individual.getAge().toString(),
+        "Traits": traitLabel(individual.traits),
         "Diet": individual.diet.toString(),
-        "Action": actions[individual.id] ?? "x",
+        "Strategy: \ngather hunt scavenge\nhide reproduce\nfeed trait": individual.strategy.toString(),
+        "Action": individual.lastEvent,
         "Health ▼": healthLabel(individual),
         "Energy": energyLabel(individual.energy),
         "Shelter": individual.shelter ? "🛡️" : "👁️",
-        "Offspring": individual.getOffspring().toString(),
         "Ancestors": ancestorLabel(individual),
-        "Traits": individual.traits.sort().join(", "),
+        "Offspring": individual.getOffspring().toString(),
     };
 
     Object.entries(values).forEach(([key, value]) => {
@@ -143,29 +125,28 @@ function showIndividuals() {
 
     if (state.individualsArray.length === 0) return;
 
-    const table = document.createElement("table");
-    const tableWidth = Object.keys(valuesForIndividual(state.individualsArray[0])).length;
-
-    addHeader(table);
-
-    const sortedIndividuals = sortIndividuals(state.individualsArray);
-
-    addSeparatorRow(table, tableWidth);
-
-    let previousCategory = null;
-    for (let individual of sortedIndividuals) {
-        const currentCategory = getCategory(individual);
-        const shouldAddSeparator = previousCategory && previousCategory !== currentCategory;
-        if (shouldAddSeparator) {
-            addSeparatorRow(table, tableWidth);
-        }
-        previousCategory = currentCategory;
-
-        addIndividualRow(table, individual);
+    const individualsByCategory: Map<IndividualCategory, Individual[]> = new Map();
+    for (let category of Object.values(IndividualCategory).filter(v => typeof v === 'number')) {
+        individualsByCategory.set(category as IndividualCategory, []);
+    }
+    for (let individual of state.individualsArray) {
+        const category = individual.getCategory();
+        individualsByCategory.get(category)!.push(individual);
     }
 
-    addSeparatorRow(table, tableWidth);
-    individualsDiv.appendChild(table);
+    for (let [category, individuals] of individualsByCategory) {
+        const categoryTitle = document.createElement("h4");
+        categoryTitle.innerText = `${IndividualCategory[category]} (${individuals.length})`;
+        individualsDiv.appendChild(categoryTitle);
+
+        if (individuals.length === 0) {
+            continue;
+        }
+
+        sortIndividualsWithinCategory(individuals);
+        const table = createTable(individuals);
+        individualsDiv.appendChild(table);
+    }
 }
 
 function addHeader(table: HTMLTableElement) {
@@ -188,7 +169,19 @@ function addIndividualRow(table: HTMLTableElement, individual: Individual) {
         td.innerText = value.toString();
         row.appendChild(td);
     });
+    row.style.backgroundColor = individual.strategy.toColor();
     table.appendChild(row);
+}
+
+function createTable(individuals: Individual[]): HTMLTableElement {
+    const table = document.createElement("table");
+    addHeader(table);
+
+    for (let individual of individuals) {
+        addIndividualRow(table, individual);
+    }
+
+    return table;
 }
 
 function showEnvironment() {
@@ -202,4 +195,8 @@ function showEnvironment() {
     const shelter = document.createElement("p");
     shelter.innerText = `${state.environment.initialShelter} -> ${state.environment.shelter} shelter`;
     environmentDiv.appendChild(shelter);
+
+    const bodies = document.createElement("p");
+    bodies.innerText = `${state.environment.allBodies.length} bodies unscavenged`;
+    environmentDiv.appendChild(bodies);
 }

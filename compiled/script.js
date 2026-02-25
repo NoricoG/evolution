@@ -2,8 +2,9 @@
 // const debugAction = FeedChildAction;
 const debugAction = null;
 let playInterval = null;
-function play() {
-    playInterval = setInterval(() => nextIteration(1), 1000);
+function play(fast) {
+    const wait = fast ? 500 : 1000;
+    playInterval = setInterval(() => nextIteration(1), wait);
 }
 function pause() {
     clearInterval(playInterval);
@@ -13,14 +14,13 @@ function nextIteration(iterations) {
     for (let i = 0; i < iterations; i++) {
         // cleanup
         for (let individualId of Object.keys(state.individuals)) {
-            if (state.individuals[individualId].dead) {
+            if (state.individuals[individualId].dead && state.individuals[individualId].deathDay < state.day - 1) {
                 delete state.individuals[individualId];
             }
         }
-        clearActions();
         state.day++;
         addIndividuals();
-        state.environment = new Environment(state);
+        state.environment = new Environment(state, state.environment.freshBodies);
         actAllIndividuals();
         starveIndividuals();
         if (state.individualsArray.filter(individual => !individual.dead).length == 0) {
@@ -31,12 +31,12 @@ function nextIteration(iterations) {
 }
 function addIndividuals() {
     const startingIndividuals = 20;
-    const migratingIndividuals = Math.max(2, startingIndividuals - state.individualsArray.length);
+    const migratingIndividuals = Math.max(0, startingIndividuals - state.individualsArray.length);
     const starting = state.individualsArray.length == 0;
     const extraIndividuals = starting ? startingIndividuals : migratingIndividuals;
     for (let i = 0; i < extraIndividuals; i++) {
         const randomDiet = Object.values(Diet)[Math.floor(Math.random() * Object.values(Diet).length)];
-        const newIndividual = new Individual(null, [], randomDiet, 1);
+        const newIndividual = new Individual(null, [], randomDiet, Strategy.randomStrategy(randomDiet));
         state.addIndividual(newIndividual);
     }
 }
@@ -66,7 +66,7 @@ function actIndividual(individual) {
         }
     }
     if (possibleActions.length > 0) {
-        var action = possibleActions[Math.floor(Math.random() * possibleActions.length)];
+        let action = individual.strategy.decide(possibleActions, individual);
         // debug specific action
         if (debugAction && possibleActions.some(a => a instanceof debugAction) && !(action instanceof debugAction)) {
             const oldAction = action.toString();
@@ -75,20 +75,20 @@ function actIndividual(individual) {
             console.log(`Debug: ${individual.id} will do ${newAction} instead of ${oldAction}`);
         }
         action.execute();
-        saveEvent(action.individual.id, action.toString());
-        individual.energy -= individual.energyNeed();
-        return true;
+        individual.lastEvent = action.toString();
     }
     else {
-        saveEvent(individual.id, `x`);
+        individual.lastEvent = "x";
     }
+    individual.energy -= individual.energyNeed();
 }
 function starveIndividuals() {
     let starvedIndividuals = 0;
     for (let individual of state.individualsArray) {
         if (individual.energy <= 0 && !individual.dead && individual.getAge() > 0) {
             individual.starved = true;
-            state.dieIndividual(individual.id);
+            individual.die();
+            state.environment.freshBodies.push(individual.id);
             starvedIndividuals++;
         }
     }
@@ -102,22 +102,13 @@ class Action {
         this.individual = individual;
     }
 }
-class HideAction extends Action {
-    isPossible() {
-        return !this.individual.shelter && state.environment.shelter > 0;
-    }
-    execute() {
-        this.individual.shelter = true;
-        state.environment.shelter--;
-    }
-    toString() {
-        return `🛡️`;
-    }
-}
 class GatherAction extends Action {
     leftShelter = false;
     isPossible() {
-        return this.individual.hasHunger() && state.environment.food > 0 && this.individual.diet != Diet.CARNIVORE;
+        const hungry = this.individual.hasHunger();
+        const foodAvailable = state.environment.food > 0;
+        const canGather = this.individual.diet == Diet.HERBIVORE || this.individual.diet == Diet.OMNIVORE;
+        return hungry && foodAvailable && canGather;
     }
     execute() {
         this.leftShelter = this.individual.leaveShelter();
@@ -128,47 +119,20 @@ class GatherAction extends Action {
         return `${leftShelterSymbol(this.leftShelter)}🥕`;
     }
 }
-class ReproduceAction extends Action {
-    cloneId = "";
-    isPossible() {
-        return this.individual.getAge() > 0 && this.individual.energy > 1;
-    }
-    execute() {
-        const baby = this.individual.procreate();
-        this.cloneId = baby.id;
-    }
-    toString() {
-        return `👶 ${this.cloneId}`;
-    }
-}
-class AddTraitAction extends Action {
-    gainedTrait = null;
-    isPossible() {
-        return this.individual.traits.length < 3 && this.individual.energy >= maxEnergy - 1 && this.individual.getAge() < 3;
-    }
-    execute() {
-        const newTraits = Object.values(Trait).filter(trait => !this.individual.traits.includes(trait));
-        this.gainedTrait = newTraits[Math.floor(Math.random() * newTraits.length)];
-        this.individual.addTrait(this.gainedTrait);
-    }
-    toString() {
-        return `🆕 ${this.gainedTrait}`;
-    }
-}
 class HuntAction extends Action {
     possibleVictims = [];
     victim = null;
     leftShelter = false;
     isPossible() {
-        if (this.individual.diet !== Diet.CARNIVORE && this.individual.diet !== Diet.OMNIVORE) {
-            return false;
-        }
-        if (!this.individual.hasHunger()) {
+        const eatsMeat = this.individual.diet === Diet.CARNIVORE || this.individual.diet === Diet.OMNIVORE;
+        const hungry = this.individual.hasHunger();
+        if (!eatsMeat || !hungry) {
             return false;
         }
         this.possibleVictims = state.individualsArray.filter(v => v.id !== this.individual.id && // don't hunt yourself
             v.id !== this.individual.parent?.id && // don't hunt your parent
             v.parent?.id !== this.individual.id && // don't hunt your children
+            !similarStrategy(v.strategy, this.individual.strategy) && // don't hunt similar strategy (family)
             v.canBeHuntedBy(this.individual));
         return this.possibleVictims.length > 0;
     }
@@ -182,12 +146,12 @@ class HuntAction extends Action {
             return;
         }
         this.individual.eat(this.victim.nutritionalValue());
-        state.dieIndividual(this.victim.id);
         this.victim.eaten = true;
-        state.environment.bodies.push(this.victim.id);
+        this.victim.die();
+        state.environment.freshBodies.push(this.victim.id);
     }
     toString() {
-        var victimId = this.victim ? this.victim.id : "❌";
+        let victimId = this.victim ? this.victim.id : "❌";
         return `${leftShelterSymbol(this.leftShelter)}🍗 ${victimId}`;
     }
 }
@@ -195,36 +159,99 @@ class ScavengeAction extends Action {
     bodyId = "";
     leftShelter = false;
     isPossible() {
-        return this.individual.diet === Diet.SCAVENGER && this.individual.hasHunger() && state.environment.bodies.length > 0;
+        const isScavenger = this.individual.diet === Diet.SCAVENGER;
+        const hungry = this.individual.hasHunger();
+        const bodiesAvailable = state.environment.allBodies.length > 0;
+        return isScavenger && hungry && bodiesAvailable;
     }
     execute() {
         this.leftShelter = this.individual.leaveShelter();
-        this.bodyId = state.environment.bodies[Math.floor(Math.random() * state.environment.bodies.length)];
+        this.bodyId = state.environment.allBodies[Math.floor(Math.random() * state.environment.allBodies.length)];
         const nutritionalValue = state.individuals[this.bodyId].nutritionalValue();
         this.individual.eat(nutritionalValue);
-        state.environment.bodies = state.environment.bodies.filter(id => id !== this.bodyId);
+        state.environment.removeBody(this.bodyId);
     }
     toString() {
         return `${leftShelterSymbol(this.leftShelter)}🦴 ${this.bodyId}`;
     }
 }
-class FeedChildAction extends Action {
-    offspringId = "";
+class HideAction extends Action {
     isPossible() {
-        return this.individual.energy > 1 && this.individual.children.length > 0;
+        const notSheltered = !this.individual.shelter;
+        const shelterAvailable = state.environment.shelter > 0;
+        return notSheltered && shelterAvailable;
     }
     execute() {
-        const child = this.individual.children[Math.floor(Math.random() * this.individual.children.length)];
-        this.offspringId = child.id;
-        child.eat(1);
+        this.individual.shelter = true;
+        state.environment.shelter--;
     }
     toString() {
-        return `🍼👶 ${this.offspringId}`;
+        return `🛡️`;
     }
 }
-const allActions = [ReproduceAction, AddTraitAction, HideAction, HuntAction, GatherAction, ScavengeAction, FeedChildAction];
+class ReproduceAction extends Action {
+    cloneId = "";
+    isPossible() {
+        const isAdult = this.individual.getAge() >= adultAge;
+        const hasEnergy = this.individual.energy > 1;
+        const hasShelter = this.individual.shelter;
+        return isAdult && hasEnergy && hasShelter;
+    }
+    execute() {
+        const baby = this.individual.procreate();
+        this.cloneId = baby.id;
+    }
+    toString() {
+        return `👶 ${this.cloneId}`;
+    }
+}
+class FeedChildAction extends Action {
+    child = null;
+    isPossible() {
+        const hasEnergy = this.individual.energy > 1;
+        const hasChildren = this.individual.children.length > 0;
+        this.child = this.individual.children[Math.floor(Math.random() * this.individual.children.length)];
+        return hasEnergy && hasChildren;
+    }
+    execute() {
+        this.child?.eat(1);
+    }
+    toString() {
+        return `🍼👶 ${this.child?.id}`;
+    }
+}
+class GainTraitAction extends Action {
+    gainedTrait = null;
+    isPossible() {
+        const underdeveloped = this.individual.traits.length < 3;
+        const hasEnergy = this.individual.energy >= maxEnergy - 1;
+        const notOld = this.individual.getAge() < adultAge * 3;
+        return underdeveloped && hasEnergy && notOld;
+    }
+    execute() {
+        const newTraits = Object.values(Trait).filter(trait => !this.individual.traits.includes(trait));
+        this.gainedTrait = newTraits[Math.floor(Math.random() * newTraits.length)];
+        this.individual.addTrait(this.gainedTrait);
+    }
+    toString() {
+        return `🆕 ${this.gainedTrait || ""}`;
+    }
+}
+const allActions = [
+    GatherAction, HuntAction, ScavengeAction,
+    HideAction, ReproduceAction,
+    FeedChildAction, GainTraitAction,
+];
+const actionGroups = [
+    ["GatherAction", "HuntAction", "ScavengeAction"],
+    ["HideAction", "ReproduceAction"],
+    ["FeedChildAction", "GainTraitAction"]
+];
 const maxEnergy = 4;
-const mutationChance = 0.1;
+const loseTraitChance = 0.1;
+const gainTraitChance = 0.2;
+const weightMutationRange = 0.3;
+const adultAge = 2;
 var Trait;
 (function (Trait) {
     Trait["LARGE"] = "large";
@@ -238,28 +265,39 @@ var Diet;
     Diet["OMNIVORE"] = "omnivore";
     Diet["SCAVENGER"] = "scavenger";
 })(Diet || (Diet = {}));
+var IndividualCategory;
+(function (IndividualCategory) {
+    IndividualCategory[IndividualCategory["Adult"] = 1] = "Adult";
+    IndividualCategory[IndividualCategory["Eaten"] = 2] = "Eaten";
+    IndividualCategory[IndividualCategory["Starved"] = 3] = "Starved";
+    IndividualCategory[IndividualCategory["Young"] = 4] = "Young";
+})(IndividualCategory || (IndividualCategory = {}));
 class Individual {
     id;
     born;
     parent;
     dead = false;
+    deathDay = null;
     eaten = false;
     starved = false;
+    strategy;
+    lastEvent = "";
     traits = [];
     diet;
     energy = 2;
     shelter = false;
     children = [];
-    constructor(parent, traits, diet, extraAge) {
+    constructor(parent, traits, diet, strategy) {
         this.id = ""; // assigned by state
-        this.born = state.day - extraAge;
+        this.born = state.day;
         this.parent = parent;
+        this.strategy = strategy;
         this.traits = traits;
-        if (Math.random() < mutationChance / 2 && this.traits.length > 0) {
+        if (Math.random() < loseTraitChance && this.traits.length > 0) {
             // remove random trait
             this.traits.splice(Math.floor(Math.random() * this.traits.length), 1);
         }
-        if (Math.random() < mutationChance) {
+        if (Math.random() < gainTraitChance) {
             const possibleNewTraits = Object.values(Trait).filter(trait => !this.traits.includes(trait));
             if (possibleNewTraits.length > 0) {
                 this.traits.push(possibleNewTraits[Math.floor(Math.random() * possibleNewTraits.length)]);
@@ -270,6 +308,15 @@ class Individual {
     }
     getAge() {
         return state.day - this.born;
+    }
+    getCategory() {
+        if (this.starved)
+            return IndividualCategory.Starved;
+        if (this.eaten)
+            return IndividualCategory.Eaten;
+        if (this.getAge() < adultAge)
+            return IndividualCategory.Young;
+        return IndividualCategory.Adult;
     }
     canBeHuntedBy(predator) {
         if (this.dead) {
@@ -310,14 +357,33 @@ class Individual {
         }
     }
     procreate() {
-        const baby = new Individual(this, this.traits, this.diet, 0);
+        const evolvedStrategy = this.getEvolvedStrategy(this.strategy);
+        const baby = new Individual(this, this.traits, this.diet, evolvedStrategy);
         state.addIndividual(baby);
         this.children.push(baby);
         return baby;
     }
+    getEvolvedStrategy(strategy) {
+        const newWeights = Object.fromEntries(Object.entries(strategy.weights).map(([key, weight]) => {
+            if (weight === null) {
+                return [key, null];
+            }
+            const mutation = Math.random() * weightMutationRange - weightMutationRange / 2;
+            let newWeight = weight + mutation;
+            if (newWeight < minWeight) {
+                newWeight = minWeight;
+            }
+            if (newWeight > maxWeight) {
+                newWeight = maxWeight;
+            }
+            return [key, newWeight];
+        }));
+        const newStrategy = new Strategy(newWeights, this.diet);
+        return newStrategy;
+    }
     getOffspring() {
-        var offspring = [];
-        var generation = 1;
+        let offspring = [];
+        let generation = 1;
         offspring.push(this.children);
         while (offspring[generation - 1].length > 0) {
             offspring.push([]);
@@ -363,12 +429,18 @@ class Individual {
     hasHunger() {
         return this.energy <= maxEnergy - 1;
     }
+    die() {
+        this.dead = true;
+        this.deathDay = state.day;
+        this.leaveShelter();
+    }
 }
+const targetIndividuals = 30;
 class State {
     day = 0;
     individuals = {};
     individualIdCounter = -1;
-    environment = new Environment(this);
+    environment = new Environment(this, []);
     get individualsArray() {
         return Object.values(this.individuals);
     }
@@ -402,23 +474,7 @@ class State {
     }
     addIndividual(individual) {
         individual.id = this.nextIndividualId();
-        if (individual.diet == Diet.HERBIVORE) {
-            individual.id += "e";
-        }
-        else if (individual.diet == Diet.OMNIVORE) {
-            individual.id += "o";
-        }
-        else if (individual.diet == Diet.CARNIVORE) {
-            individual.id += "a";
-        }
-        else if (individual.diet == Diet.SCAVENGER) {
-            individual.id += "i";
-        }
         this.individuals[individual.id] = individual;
-    }
-    dieIndividual(individualId) {
-        this.individuals[individualId].dead = true;
-        this.environment.bodies.push(individualId);
     }
     livingIndividualCount() {
         return Object.values(this.individuals).filter(individual => !individual.dead).length;
@@ -429,18 +485,188 @@ class Environment {
     food;
     initialShelter;
     shelter;
-    bodies;
-    constructor(state) {
-        const livingCount = state.livingIndividualCount();
-        this.initialFood = Math.round((0.1 + 2 * Math.random()) * livingCount);
+    freshBodies;
+    oldBodies;
+    allBodies;
+    minFoodFactor = 0.3;
+    maxFoodFactor = 0.7;
+    minShelterFactor = 0.1;
+    maxShelterFactor = 0.2;
+    constructor(state, oldBodies) {
+        const foodFactor = this.minFoodFactor + Math.random() * (this.maxFoodFactor - this.minFoodFactor);
+        const shelterFactor = this.minShelterFactor + Math.random() * (this.maxShelterFactor - this.minShelterFactor);
+        this.initialFood = Math.round(foodFactor * targetIndividuals);
+        this.initialShelter = Math.round(shelterFactor * targetIndividuals);
+        const shelteredIndividuals = state.individualsArray.filter(individual => individual.shelter && !individual.traits.includes(Trait.BURROW)).length;
+        this.initialShelter -= shelteredIndividuals;
+        if (this.initialShelter < 0) {
+            this.initialShelter = 0;
+        }
         this.food = this.initialFood;
-        this.initialShelter = Math.ceil(Math.random() * 6);
         this.shelter = this.initialShelter;
-        this.bodies = [];
+        this.oldBodies = oldBodies;
+        this.freshBodies = [];
+        this.allBodies = [...this.oldBodies, ...this.freshBodies];
+    }
+    removeBody(bodyId) {
+        this.freshBodies = this.freshBodies.filter(id => id !== bodyId);
+        this.oldBodies = this.oldBodies.filter(id => id !== bodyId);
+        this.allBodies = this.allBodies.filter(id => id !== bodyId);
     }
 }
-var state = new State();
+let state = new State();
+const minWeight = 0.1;
+const maxWeight = 2;
+function randomWeight() {
+    return minWeight + Math.random() * (maxWeight - minWeight);
+}
+function hslToRgb(h, s, l) {
+    const a = s * Math.min(l, 1 - l);
+    const f = (n) => {
+        const k = (n + h * 12) % 12;
+        return l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1));
+    };
+    return [Math.round(f(0) * 255), Math.round(f(8) * 255), Math.round(f(4) * 255)];
+}
+const actionHues = {
+    FeedChildAction: 0, GainTraitAction: 51, GatherAction: 103,
+    HideAction: 154, HuntAction: 206, ReproduceAction: 257, ScavengeAction: 309,
+};
+const weightToString = (weight) => {
+    if (weight === null)
+        return "x";
+    return weight.toFixed(1);
+};
+function similarStrategy(a, b) {
+    const hashA = a.toString();
+    const hashB = b.toString();
+    // check if every character in the has is at most one away
+    for (let i = 0; i < hashA.length; i++) {
+        // both x (inactive) is equal
+        if (hashA[i] == "x" && hashB[i] == "x")
+            continue;
+        // one x and one not x is different
+        if (hashA[i] == "x" || hashB[i] == "x")
+            return false;
+        const numA = parseInt(hashA[i]);
+        const numB = parseInt(hashB[i]);
+        if (Math.abs(numA - numB) > 1) {
+            return false;
+        }
+    }
+    return true;
+}
+class Strategy {
+    weights;
+    diet;
+    static randomStrategy(diet) {
+        const weights = {
+            GatherAction: diet == Diet.CARNIVORE || diet == Diet.SCAVENGER ? null : randomWeight(),
+            HuntAction: diet == Diet.HERBIVORE || diet == Diet.SCAVENGER ? null : randomWeight(),
+            ScavengeAction: diet != Diet.SCAVENGER ? null : randomWeight(),
+            HideAction: randomWeight(),
+            ReproduceAction: randomWeight(),
+            FeedChildAction: randomWeight(),
+            GainTraitAction: randomWeight(),
+        };
+        return new Strategy(weights, diet);
+    }
+    constructor(weights, diet) {
+        this.diet = diet;
+        this.weights = weights;
+    }
+    toString() {
+        // map weight from min-max range to 0-9
+        function toNum(weight) {
+            if (weight === null)
+                return "x";
+            const normalized = (weight - minWeight) / (maxWeight - minWeight); // 0.0 to 1.0
+            const bucket = Math.floor(normalized * 10);
+            const clamped = Math.min(9, bucket); // in case weight == maxWeight
+            return clamped.toString();
+        }
+        // put dash between groups of actions
+        let groupedHash = "";
+        for (const group of actionGroups) {
+            if (groupedHash) {
+                groupedHash += "-";
+            }
+            groupedHash += group.map(action => toNum(this.weights[action])).join("");
+        }
+        return groupedHash;
+    }
+    toColorOld() {
+        let r = 0, g = 0, b = 0, total = 0;
+        for (const [action, weight] of Object.entries(this.weights)) {
+            const h = actionHues[action] / 360;
+            const [rc, gc, bc] = hslToRgb(h, 0.8, 0.5);
+            r += rc * weight;
+            g += gc * weight;
+            b += bc * weight;
+            total += weight;
+        }
+        return `rgb(${Math.round(r / total)},${Math.round(g / total)},${Math.round(b / total)})`;
+    }
+    toColor() {
+        const dietHueCenters = {
+            [Diet.CARNIVORE]: 10, //red
+            [Diet.HERBIVORE]: 120, // green
+            [Diet.OMNIVORE]: 210, //blue
+            [Diet.SCAVENGER]: 300, //purple
+        };
+        // each diet gets a ±90° range around its center hue
+        const hueRange = 90 * 2;
+        // weighted-average of action hues, using only active (non-null) weights
+        let weightedHueSum = 0, totalWeight = 0, weightSum = 0, weightCount = 0;
+        let wMin = maxWeight, wMax = minWeight;
+        for (const [action, weight] of Object.entries(this.weights)) {
+            if (weight === null)
+                continue;
+            weightedHueSum += actionHues[action] * weight;
+            totalWeight += weight;
+            weightSum += weight;
+            weightCount++;
+            if (weight < wMin)
+                wMin = weight;
+            if (weight > wMax)
+                wMax = weight;
+        }
+        // map the weighted hue (0–360°) to an offset of hueRange around the diet's center hue
+        const avgActionHue = totalWeight > 0 ? weightedHueSum / totalWeight : 180;
+        const hueOffset = (avgActionHue / 360 - 0.5) * hueRange;
+        const finalHue = ((dietHueCenters[this.diet] + hueOffset) % 360 + 360) % 360;
+        // vary lightness based on average weight magnitude (heavier weights → brighter)
+        const avgWeight = weightCount > 0 ? weightSum / weightCount : 1;
+        const lightness = 0.35 + 0.3 * ((avgWeight - minWeight) / (maxWeight - minWeight));
+        // vary saturation based on weight spread (more extreme/varied strategy → more vivid)
+        const weightSpread = weightCount > 1 ? (wMax - wMin) / (maxWeight - minWeight) : 0;
+        const saturation = 0.55 + 0.4 * weightSpread;
+        const [r, g, b] = hslToRgb(finalHue / 360, saturation, lightness);
+        return `rgb(${r},${g},${b})`;
+    }
+    decide(actions, individual) {
+        if (actions.length == 0) {
+            return null;
+        }
+        const weightedActions = actions.map(action => {
+            const weight = this.weights[action.constructor.name] ?? 1;
+            return { action, weight };
+        });
+        const totalWeight = weightedActions.reduce((sum, aw) => sum + aw.weight, 0);
+        const randomWeight = Math.random() * totalWeight;
+        let remainingWeight = randomWeight;
+        for (const aw of weightedActions) {
+            if (remainingWeight < aw.weight) {
+                return aw.action;
+            }
+            remainingWeight -= aw.weight;
+        }
+        console.error("No action chosen, this should not happen");
+        return null;
+    }
+}
 window.addEventListener('DOMContentLoaded', () => nextIteration(1));
+let playFast = false;
 function togglePlay() {
     const btn = document.getElementById("play-pause-btn");
     if (playInterval !== null) {
@@ -448,9 +674,19 @@ function togglePlay() {
         btn.textContent = "▶ Play";
     }
     else {
-        play();
+        play(playFast);
         btn.textContent = "⏸ Pause";
     }
+}
+function toggleSpeed() {
+    const btn = document.getElementById("speed-btn");
+    if (playInterval !== null) {
+        pause();
+    }
+    playFast = !playFast;
+    play(playFast);
+    document.getElementById("play-pause-btn").textContent = "⏸ Pause";
+    btn.textContent = playFast ? "Slower" : "Faster";
 }
 function energyLabel(energy) {
     const energyLabels = ["🔴", "🟠", "🟡", "🟢"];
@@ -480,58 +716,30 @@ function ancestorLabel(individual) {
     }
     return individual.getParentIds().join(", ");
 }
-// dict with individual id as key and event string as value
-let actions = {};
-function saveEvent(individualId, event) {
-    if (actions[individualId]) {
-        console.error(`Individual ${individualId} already has a saved action: ${actions[individualId]}`);
+function traitLabel(traits) {
+    let label = "";
+    if (traits.includes(Trait.BURROW)) {
+        label += "🕳️";
     }
-    actions[individualId] = event;
-}
-function clearActions() {
-    actions = {};
+    if (traits.includes(Trait.LARGE)) {
+        label += "🦣";
+    }
+    if (traits.includes(Trait.SWIM)) {
+        label += "🏊🏻‍♂️";
+    }
+    return label;
 }
 function updateUI() {
     updateTitles();
-    showIndividuals();
     showEnvironment();
+    showIndividuals();
 }
 function updateTitles() {
     document.getElementById("iteration-title").innerText = `Iteration ${state.day}`;
     document.getElementById("individuals-title").innerText = `Individuals (${state.individualsArray.length})`;
 }
-function addSeparatorRow(table, colSpan) {
-    const separatorRow = document.createElement("tr");
-    separatorRow.classList.add("section-separator");
-    const separatorCell = document.createElement("td");
-    separatorCell.colSpan = colSpan;
-    separatorRow.appendChild(separatorCell);
-    table.appendChild(separatorRow);
-}
-var IndividualCategory;
-(function (IndividualCategory) {
-    IndividualCategory[IndividualCategory["Newborn"] = 4] = "Newborn";
-    IndividualCategory[IndividualCategory["Starved"] = 3] = "Starved";
-    IndividualCategory[IndividualCategory["Eaten"] = 2] = "Eaten";
-    IndividualCategory[IndividualCategory["Alive"] = 1] = "Alive";
-})(IndividualCategory || (IndividualCategory = {}));
-function getCategory(individual) {
-    if (individual.getAge() == 0)
-        return IndividualCategory.Newborn;
-    if (individual.starved)
-        return IndividualCategory.Starved;
-    if (individual.eaten)
-        return IndividualCategory.Eaten;
-    return IndividualCategory.Alive;
-}
-function sortIndividuals(individuals) {
+function sortIndividualsWithinCategory(individuals) {
     return individuals.sort((a, b) => {
-        const categoryA = getCategory(a);
-        const categoryB = getCategory(b);
-        // sort by category, offspring descending, age descending, id ascending
-        if (categoryA !== categoryB) {
-            return categoryA - categoryB;
-        }
         const offspringA = a.getOffspring().reduce((sum, val) => sum + val, 0);
         const offspringB = b.getOffspring().reduce((sum, val) => sum + val, 0);
         return offspringB - offspringA ||
@@ -543,14 +751,15 @@ function valuesForIndividual(individual) {
     const values = {
         "ID": individual.id,
         "Age": individual.getAge().toString(),
+        "Traits": traitLabel(individual.traits),
         "Diet": individual.diet.toString(),
-        "Action": actions[individual.id] ?? "x",
+        "Strategy: \ngather hunt scavenge\nhide reproduce\nfeed trait": individual.strategy.toString(),
+        "Action": individual.lastEvent,
         "Health ▼": healthLabel(individual),
         "Energy": energyLabel(individual.energy),
         "Shelter": individual.shelter ? "🛡️" : "👁️",
-        "Offspring": individual.getOffspring().toString(),
         "Ancestors": ancestorLabel(individual),
-        "Traits": individual.traits.sort().join(", "),
+        "Offspring": individual.getOffspring().toString(),
     };
     Object.entries(values).forEach(([key, value]) => {
         if (value === undefined) {
@@ -565,23 +774,25 @@ function showIndividuals() {
     individualsDiv.innerHTML = "";
     if (state.individualsArray.length === 0)
         return;
-    const table = document.createElement("table");
-    const tableWidth = Object.keys(valuesForIndividual(state.individualsArray[0])).length;
-    addHeader(table);
-    const sortedIndividuals = sortIndividuals(state.individualsArray);
-    addSeparatorRow(table, tableWidth);
-    let previousCategory = null;
-    for (let individual of sortedIndividuals) {
-        const currentCategory = getCategory(individual);
-        const shouldAddSeparator = previousCategory && previousCategory !== currentCategory;
-        if (shouldAddSeparator) {
-            addSeparatorRow(table, tableWidth);
-        }
-        previousCategory = currentCategory;
-        addIndividualRow(table, individual);
+    const individualsByCategory = new Map();
+    for (let category of Object.values(IndividualCategory).filter(v => typeof v === 'number')) {
+        individualsByCategory.set(category, []);
     }
-    addSeparatorRow(table, tableWidth);
-    individualsDiv.appendChild(table);
+    for (let individual of state.individualsArray) {
+        const category = individual.getCategory();
+        individualsByCategory.get(category).push(individual);
+    }
+    for (let [category, individuals] of individualsByCategory) {
+        const categoryTitle = document.createElement("h4");
+        categoryTitle.innerText = `${IndividualCategory[category]} (${individuals.length})`;
+        individualsDiv.appendChild(categoryTitle);
+        if (individuals.length === 0) {
+            continue;
+        }
+        sortIndividualsWithinCategory(individuals);
+        const table = createTable(individuals);
+        individualsDiv.appendChild(table);
+    }
 }
 function addHeader(table) {
     const headerRow = document.createElement("tr");
@@ -601,7 +812,16 @@ function addIndividualRow(table, individual) {
         td.innerText = value.toString();
         row.appendChild(td);
     });
+    row.style.backgroundColor = individual.strategy.toColor();
     table.appendChild(row);
+}
+function createTable(individuals) {
+    const table = document.createElement("table");
+    addHeader(table);
+    for (let individual of individuals) {
+        addIndividualRow(table, individual);
+    }
+    return table;
 }
 function showEnvironment() {
     const environmentDiv = document.getElementById("environment");
@@ -612,4 +832,7 @@ function showEnvironment() {
     const shelter = document.createElement("p");
     shelter.innerText = `${state.environment.initialShelter} -> ${state.environment.shelter} shelter`;
     environmentDiv.appendChild(shelter);
+    const bodies = document.createElement("p");
+    bodies.innerText = `${state.environment.allBodies.length} bodies unscavenged`;
+    environmentDiv.appendChild(bodies);
 }
