@@ -1,0 +1,10 @@
+{
+    "name": "evolution",
+    "scripts": {
+        "build": "esbuild src/ui.ts --bundle --outfile=compiled/script.js",
+        "watch": "esbuild src/ui.ts --bundle --outfile=compiled/script.js --watch"
+    },
+    "devDependencies": {
+        "esbuild": "^0.25.0"
+    }
+}

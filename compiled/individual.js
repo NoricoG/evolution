@@ -1,107 +1,82 @@
-
-import { Diet, IndividualCategory } from "./enums.js";
-
-import { Strategy } from "./genetics/strategy.js";
-import { Traits } from "./genetics/traits.js";
-
-export class Individual {
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.Individual = void 0;
+const enums_js_1 = require("./enums.js");
+const strategy_js_1 = require("./genetics/strategy.js");
+const traits_js_1 = require("./genetics/traits.js");
+class Individual {
     static maxEnergy = 4;
     static adultAge = 2;
-
-    id: string;
-    birthday: number;
-    parent: Individual | null;
-    deathDay: number | null = null;
-    eaten: boolean = false;
-    starved: boolean = false;
-
-    strategy: Strategy;
-    traits: Traits;
-
+    id;
+    born;
+    parent;
+    dead = false;
+    deathDay = null;
+    eaten = false;
+    starved = false;
+    strategy;
+    traits;
     lastEvent = "";
-
-    diet: Diet;
-
+    diet;
     energy = 2;
     shelter = false;
-
-    children: Individual[] = [];
-
-    constructor(birthday: number, parent: Individual | null, traits: Traits, diet: Diet, strategy: Strategy) {
-        this.id = "";  // assigned by state
-        this.birthday = birthday;
-
+    children = [];
+    constructor(birthday, parent, traits, diet, strategy) {
+        this.id = ""; // assigned by state
+        this.born = birthday;
         this.parent = parent;
-
         this.strategy = strategy;
-
         this.traits = traits;
-
         this.diet = diet;
-
-        this.energy = 3;
+        this.energy = 2;
     }
-
-    static random(birthday: number): Individual {
-        const randomDiet = Object.values(Diet)[Math.floor(Math.random() * Object.values(Diet).length)];
-        const newIndividual = new Individual(birthday, null, Traits.random(), randomDiet, Strategy.random(randomDiet));
+    static random(birthday) {
+        const randomDiet = Object.values(enums_js_1.Diet)[Math.floor(Math.random() * Object.values(enums_js_1.Diet).length)];
+        const newIndividual = new Individual(birthday, null, traits_js_1.Traits.random(), randomDiet, strategy_js_1.Strategy.random(randomDiet));
         return newIndividual;
     }
-
-    getAge(today: number): number {
-        if (this.deathDay) {
-            return this.deathDay - this.birthday;
-        }
-        return today - this.birthday;
+    getAge(today) {
+        return today - this.born;
     }
-
-    getCategory(today: number): IndividualCategory {
-        if (this.starved) return IndividualCategory.Starved;
-        if (this.eaten) return IndividualCategory.Eaten;
-        if (this.getAge(today) < Individual.adultAge) return IndividualCategory.Young;
-        return IndividualCategory.Adult;
+    getCategory(today) {
+        if (this.starved)
+            return enums_js_1.IndividualCategory.Starved;
+        if (this.eaten)
+            return enums_js_1.IndividualCategory.Eaten;
+        if (this.getAge(today) < Individual.adultAge)
+            return enums_js_1.IndividualCategory.Young;
+        return enums_js_1.IndividualCategory.Adult;
     }
-
-    canBeHuntedBy(predator: Individual, today: number): boolean {
-        if (this.deathDay) {
+    canBeHuntedBy(predator, today) {
+        if (this.dead) {
             return false;
         }
-
         if (this.shelter) {
             return false;
         }
-
         // protected by parent at start of life
         if (this.getAge(today) == 0) {
             return false;
         }
-
         // only hunt if it will be succesful
         return this.traits.canEscape(predator.traits);
         // always hunt, but it will not always succeed
-        // return true;
+        return true;
     }
-
-    eat(nutritionalValue: number) {
+    eat(nutritionalValue) {
         this.energy = Math.min(Individual.maxEnergy, this.energy + nutritionalValue);
     }
-
-    createChild(today: number): Individual {
+    createChild(today) {
         const evolvedStrategy = this.strategy.mutate();
         const evolvedTraits = this.traits.mutate();
         const baby = new Individual(today, this, evolvedTraits, this.diet, evolvedStrategy);
         this.children.push(baby);
-
         return baby;
     }
-
-
-
-    getOffspringCounts(): number[] {
+    getOffspringCounts() {
         let offspring = [];
         let generation = 1;
         offspring.push(this.children);
-
         while (offspring[generation - 1].length > 0) {
             offspring.push([]);
             for (let child of offspring[generation - 1]) {
@@ -109,55 +84,46 @@ export class Individual {
             }
             generation++;
         }
-
         // remove last generation which is empty
         offspring.pop();
-
-        const offSpringCounts = offspring.map(generation => generation.filter(individual => !individual.deathDay).length);
+        const offSpringCounts = offspring.map(generation => generation.filter(individual => !individual.dead).length);
         if (offSpringCounts[offSpringCounts.length - 1] == 0) {
             offSpringCounts.pop();
         }
         return offSpringCounts;
     }
-
-    getOffspringSum(): number {
+    getOffspringSum() {
         return this.getOffspringCounts().reduce((sum, val) => sum + val, 0);
     }
-
     // returns the first parent and any living older parents, from old to new
-    getParentIds(): string[] {
+    getParentIds() {
         const parents = [];
-
         if (this.parent) {
             parents.push(this.parent);
-
             let alive = true;
             while (alive) {
-                const nextParent: Individual = parents[parents.length - 1].parent!;
-                alive = nextParent != null && !nextParent.deathDay;
+                const nextParent = parents[parents.length - 1].parent;
+                alive = nextParent != null && !nextParent.dead;
                 if (alive) {
                     parents.push(nextParent);
                 }
             }
-
-
         }
         return parents.map(parent => parent.id);
     }
-
-    leaveShelter(): boolean {
+    leaveShelter() {
         if (this.shelter) {
             this.shelter = false;
             return true;
         }
         return false;
     }
-
-    hasHunger(): boolean {
+    hasHunger() {
         return this.energy <= Individual.maxEnergy - 1;
     }
-
-    die(today: number) {
+    die(today) {
+        this.dead = true;
         this.deathDay = today;
     }
 }
+exports.Individual = Individual;
