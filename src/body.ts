@@ -1,3 +1,4 @@
+// currently not used
 export class Body {
     id: string
     nutrionalValue: number;

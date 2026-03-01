@@ -27,3 +27,14 @@ td {
     padding: 8px;
     text-align: center;
 }
+
+.individuals-columns {
+    display: flex;
+    gap: 16px;
+    align-items: flex-start;
+}
+
+.column {
+    flex: 1;
+    min-width: 0;
+}

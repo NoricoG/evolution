@@ -1,53 +1,23 @@
 "use strict";
 (() => {
-  // src/enums.ts
-  var Diet = /* @__PURE__ */ ((Diet2) => {
-    Diet2["HERBIVORE"] = "herbivore";
-    Diet2["CARNIVORE"] = "carnivore";
-    Diet2["OMNIVORE"] = "omnivore";
-    Diet2["SCAVENGER"] = "scavenger";
-    return Diet2;
-  })(Diet || {});
-  var IndividualCategory = /* @__PURE__ */ ((IndividualCategory2) => {
-    IndividualCategory2[IndividualCategory2["Adult"] = 1] = "Adult";
-    IndividualCategory2[IndividualCategory2["Eaten"] = 2] = "Eaten";
-    IndividualCategory2[IndividualCategory2["Starved"] = 3] = "Starved";
-    IndividualCategory2[IndividualCategory2["Young"] = 4] = "Young";
-    return IndividualCategory2;
-  })(IndividualCategory || {});
-
-  // src/body.ts
-  var Body = class {
-    id;
-    nutrionalValue;
-    deathDay;
-    constructor(id, nutrionalValue, deathDay) {
-      this.id = id;
-      this.nutrionalValue = nutrionalValue;
-      this.deathDay = deathDay;
-    }
-  };
-
   // src/genetics/gene.ts
   var Gene = class _Gene {
-    static minValue = 0.1;
-    static maxValue = 2;
-    static shiftRange = 0.5;
-    static geneFlipChance = 0.05;
+    static shiftRange = 0.1;
+    static geneFlipChance = 0;
+    // disabled for testing
+    // between 0 and 1 (inclusive)
     value;
-    constructor(value = null) {
+    constructor(value) {
       this.value = value;
     }
     static random() {
-      const randomValue = _Gene.minValue + Math.random() * (_Gene.maxValue - _Gene.minValue);
+      const randomValue = Math.random();
       return new _Gene(randomValue);
     }
     toString() {
-      if (this.value === null) return "x";
-      const normalized = (this.value - _Gene.minValue) / (_Gene.maxValue - _Gene.minValue);
-      const bucket = Math.floor(normalized * 10);
-      const clamped = Math.min(9, bucket);
-      return clamped.toString();
+      if (this.value == 0) return "x";
+      const bucket = Math.ceil(this.value * 10) - 1;
+      return bucket.toString();
     }
     mutate() {
       if (Math.random() < _Gene.geneFlipChance) {
@@ -57,26 +27,18 @@
       }
     }
     invert() {
-      if (this.value === null) return new _Gene(null);
-      const normalized = (this.value - _Gene.minValue) / (_Gene.maxValue - _Gene.minValue);
-      const invertedNormalized = 1 - normalized;
-      const inverted = _Gene.minValue + invertedNormalized * (_Gene.maxValue - _Gene.minValue);
-      return new _Gene(inverted);
+      return new _Gene(1 - this.value);
     }
     shift() {
-      if (this.value === null) return new _Gene(null);
       const shift = Math.random() * _Gene.shiftRange - _Gene.shiftRange / 2;
       let shifted = this.value + shift;
-      if (shifted < _Gene.minValue) {
-        shifted = _Gene.minValue;
+      if (shifted < 0) {
+        shifted = 0;
       }
-      if (shifted > _Gene.maxValue) {
-        shifted = _Gene.maxValue;
+      if (shifted > 1) {
+        shifted = 1;
       }
       return new _Gene(shifted);
-    }
-    setToNull() {
-      this.value = null;
     }
     static difference(geneA, geneB) {
       const a = geneA.toString();
@@ -90,46 +52,104 @@
   };
 
   // src/genetics/chromosome.ts
-  var Chromosome = class _Chromosome {
-    groups;
+  var Chromosome = class {
+    static geneKeys = [];
+    static geneLabels = "";
     genes;
-    constructor(groups, genes) {
-      this.groups = groups;
+    constructor(genes) {
       this.genes = genes;
     }
     toString() {
-      return this.groups.map((group) => group.map((key) => this.genes[key].toString()).join("")).join("-");
+      return Object.keys(this.genes).map((key) => this.genes[key].toString()).join("");
     }
-    static random(groups) {
-      const genes = {};
-      for (const group of groups) {
-        for (const key of group) {
-          genes[key] = Gene.random();
-        }
+    get(gene) {
+      return this.genes[gene].value;
+    }
+    mutatedGenes() {
+      const newGenes = {};
+      for (const key of Object.keys(this.genes)) {
+        newGenes[key] = this.genes[key].mutate();
       }
-      return new _Chromosome(groups, genes);
+      return newGenes;
     }
-    mutate() {
-      const newGenes = Object.entries(this.genes).map(([key, gene]) => {
-        return [key, gene.mutate()];
-      });
-      return new _Chromosome(this.groups, Object.fromEntries(newGenes));
+    static randomGenes(keys) {
+      const genes = {};
+      for (const key of keys) {
+        genes[key] = Gene.random();
+      }
+      return genes;
     }
-    static similar(chromosomeA, chromosomeB, margin) {
-      for (const group of chromosomeA.groups) {
-        for (const key of group) {
-          const geneA = chromosomeA.genes[key];
-          const geneB = chromosomeB.genes[key];
-          if (Gene.difference(geneA, geneB) > margin) {
-            return false;
-          }
+    static similar(chromosomeA, chromosomeB, stepsMargin) {
+      for (const key of Object.keys(chromosomeA.genes)) {
+        const geneA = chromosomeA.genes[key];
+        const geneB = chromosomeB.genes[key];
+        if (Gene.difference(geneA, geneB) > stepsMargin) {
+          return false;
         }
       }
       return true;
     }
   };
 
-  // src/genetics/strategy.ts
+  // src/genetics/brain.ts
+  var BrainGenes = /* @__PURE__ */ ((BrainGenes2) => {
+    BrainGenes2["GatherAction"] = "GatherAction";
+    BrainGenes2["HuntAction"] = "HuntAction";
+    BrainGenes2["ReproduceAction"] = "ReproduceAction";
+    return BrainGenes2;
+  })(BrainGenes || {});
+  var Brain = class _Brain extends Chromosome {
+    static geneKeys = Object.values(BrainGenes);
+    // static geneLabels = "🥕🍖🥩👶";
+    static geneLabels = "\u{1F955}\u{1F969}\u{1F476}";
+    decide(actions) {
+      if (actions.length === 0) {
+        return null;
+      }
+      const weightedActions = actions.map((action) => {
+        const weight = this.genes[action.constructor.name] || { value: 1 };
+        return { action, weight };
+      });
+      const totalWeight = weightedActions.reduce((sum, aw) => sum + aw.weight.value, 0);
+      const randomWeight = Math.random() * totalWeight;
+      if (totalWeight === 0) {
+        const actionsString = actions.map((a) => a.constructor.name).join(" ");
+        console.info(`This individual can do ${actionsString} but brain is ${this.toString()} so it does nothing`);
+        return null;
+      }
+      let cumulativeWeight = 0;
+      for (const aw of weightedActions) {
+        cumulativeWeight += aw.weight.value;
+        if (cumulativeWeight > randomWeight) {
+          return aw.action;
+        }
+      }
+      console.warn("No action chosen, this should not happen");
+      return null;
+    }
+    mutatedCopy() {
+      return new _Brain(this.mutatedGenes());
+    }
+    static random() {
+      return new _Brain(Chromosome.randomGenes(_Brain.geneKeys));
+    }
+    static debugHerbivore() {
+      return new _Brain({
+        ["GatherAction" /* GatherAction */]: new Gene(1),
+        ["HuntAction" /* HuntAction */]: new Gene(0),
+        ["ReproduceAction" /* ReproduceAction */]: new Gene(1)
+      });
+    }
+    static debugCarnivore() {
+      return new _Brain({
+        ["GatherAction" /* GatherAction */]: new Gene(0),
+        ["HuntAction" /* HuntAction */]: new Gene(1),
+        ["ReproduceAction" /* ReproduceAction */]: new Gene(1)
+      });
+    }
+  };
+
+  // src/genetics/diet.ts
   function hslToRgb(h, s, l) {
     const a = s * Math.min(l, 1 - l);
     const f = (n) => {
@@ -138,189 +158,110 @@
     };
     return [Math.round(f(0) * 255), Math.round(f(8) * 255), Math.round(f(4) * 255)];
   }
-  var actionHues = {
-    FeedChildAction: 0,
-    GainTraitAction: 51,
-    GatherAction: 103,
-    HideAction: 154,
-    HuntAction: 206,
-    ReproduceAction: 257,
-    ScavengeAction: 309
-  };
-  var dietHueCenters = {
-    ["carnivore" /* CARNIVORE */]: 10,
-    //red
-    ["herbivore" /* HERBIVORE */]: 120,
-    // green
-    ["omnivore" /* OMNIVORE */]: 210,
-    //blue
-    ["scavenger" /* SCAVENGER */]: 300
-    //purple
-  };
-  var Strategy = class _Strategy {
-    static groups = [
-      ["GatherAction", "HuntAction", "ScavengeAction"],
-      ["HideAction", "ReproduceAction", "FeedChildAction"]
-    ];
-    static headerString = "\u{1F955}\u{1F357}\u{1F9B4}-\u{1F6E1}\uFE0F\u{1F476}\u{1F37C}";
-    chromosome;
-    diet;
-    constructor(diet, genes) {
-      this.chromosome = new Chromosome(_Strategy.groups, genes);
-      if (diet != "herbivore" /* HERBIVORE */ && diet != "omnivore" /* OMNIVORE */) {
-        this.chromosome.genes["GatherAction"].setToNull();
+  var DietGenes = /* @__PURE__ */ ((DietGenes2) => {
+    DietGenes2["Herbivore"] = "Herbivore";
+    DietGenes2["Scavenger"] = "Scavenger";
+    DietGenes2["Carnivore"] = "Carnivore";
+    return DietGenes2;
+  })(DietGenes || {});
+  var Diet = class _Diet extends Chromosome {
+    static geneKeys = Object.values(DietGenes);
+    static geneLabels = "\u{1F955}\u{1F356}\u{1F969}";
+    constructor(genes) {
+      super(genes);
+      this.scaleDown();
+    }
+    scaleDown() {
+      const dietTotal = Object.values(DietGenes).reduce((sum, action) => sum + (this.genes[action]?.value || 0), 0);
+      if (dietTotal > 1) {
+        for (const diet of Object.values(DietGenes)) {
+          this.genes[diet].value = this.genes[diet].value / dietTotal;
+        }
       }
-      if (diet != "omnivore" /* OMNIVORE */ && diet != "carnivore" /* CARNIVORE */) {
-        this.chromosome.genes["HuntAction"].setToNull();
+    }
+    mutatedCopy() {
+      const newGenes = {};
+      for (const key of Object.keys(this.genes)) {
+        newGenes[key] = this.genes[key].mutate();
       }
-      if (diet != "scavenger" /* SCAVENGER */) {
-        this.chromosome.genes["ScavengeAction"].setToNull();
-      }
-      this.diet = diet;
-    }
-    mutate() {
-      const mutatedChromosome = this.chromosome.mutate();
-      return new _Strategy(this.diet, mutatedChromosome.genes);
-    }
-    static random(diet) {
-      const chromosome = Chromosome.random(_Strategy.groups);
-      return new _Strategy(diet, chromosome.genes);
-    }
-    toString() {
-      return this.chromosome.toString();
-    }
-    static similar(strategyA, strategyB) {
-      return Chromosome.similar(strategyA.chromosome, strategyB.chromosome, 1);
-    }
-    toColorOld() {
-      let r = 0, g = 0, b = 0, total = 0;
-      for (const [action, weight] of Object.entries(this.chromosome.genes)) {
-        const h = actionHues[action] / 360;
-        const [rc, gc, bc] = hslToRgb(h, 0.8, 0.5);
-        r += rc * weight.value;
-        g += gc * weight.value;
-        b += bc * weight.value;
-        total += weight.value;
-      }
-      return `rgb(${Math.round(r / total)},${Math.round(g / total)},${Math.round(b / total)})`;
+      return new _Diet(newGenes);
     }
     toColor() {
-      const hueRange = 90 * 2;
-      let weightedHueSum = 0, totalWeight = 0, weightSum = 0, weightCount = 0;
-      let wMin = Gene.maxValue, wMax = Gene.minValue;
-      for (const [action, weight] of Object.entries(this.chromosome.genes)) {
-        if (weight === null) continue;
-        weightedHueSum += actionHues[action] * weight.value;
-        totalWeight += weight.value;
-        weightSum += weight.value;
-        weightCount++;
-        if (weight.value < wMin) wMin = weight.value;
-        if (weight.value > wMax) wMax = weight.value;
-      }
-      const avgActionHue = totalWeight > 0 ? weightedHueSum / totalWeight : 180;
-      const hueOffset = (avgActionHue / 360 - 0.5) * hueRange;
-      const finalHue = ((dietHueCenters[this.diet] + hueOffset) % 360 + 360) % 360;
-      const avgWeight = weightCount > 0 ? weightSum / weightCount : 1;
-      const lightness = 0.35 + 0.3 * ((avgWeight - Gene.minValue) / (Gene.maxValue - Gene.minValue));
-      const weightSpread = weightCount > 1 ? (wMax - wMin) / (Gene.maxValue - Gene.minValue) : 0;
-      const saturation = 0.55 + 0.4 * weightSpread;
-      const [r, g, b] = hslToRgb(finalHue / 360, saturation, lightness);
-      return `rgb(${r},${g},${b})`;
+      const herbivoreValue = this.genes["Herbivore" /* Herbivore */].value;
+      const carnivoreValue = this.genes["Carnivore" /* Carnivore */].value;
+      const mostlyHerbivore = herbivoreValue > carnivoreValue;
+      const hue = mostlyHerbivore ? 120 : 0;
+      const saturation = 0.75;
+      const lightness = 0.5;
+      const [r, g, b] = hslToRgb(hue / 360, saturation, lightness);
+      return `rgb(${r}, ${g}, ${b})`;
     }
-    decide(actions, individual) {
-      const weightedActions = actions.map((action) => {
-        const weight = this.chromosome.genes[action.constructor.name] || { value: 1 };
-        return { action, weight };
-      });
-      const totalWeight = weightedActions.reduce((sum, aw) => sum + aw.weight.value, 0);
-      const randomWeight = Math.random() * totalWeight;
-      let remainingWeight = randomWeight;
-      for (const aw of weightedActions) {
-        if (remainingWeight < aw.weight.value) {
-          return aw.action;
-        }
-        remainingWeight -= aw.weight.value;
-      }
-      console.error("No action chosen, this should not happen");
-      return weightedActions[0].action;
+    mostlyHerbivore() {
+      const herbivoreValue = this.genes["Herbivore" /* Herbivore */].value;
+      const carnivoreValue = this.genes["Carnivore" /* Carnivore */].value;
+      return herbivoreValue > carnivoreValue;
     }
-  };
-
-  // src/genetics/traits.ts
-  var Traits = class _Traits {
-    static groups = [
-      [
-        "strength",
-        "speed",
-        "agility"
-      ]
-    ];
-    static headerString = "\u{1F4AA}\u{1F3C3}\u200D\u2642\uFE0F\u{1F938}\u{1F3FC}\u200D\u2642\uFE0F";
-    chromosome;
-    energyNeed;
-    nutritionalValue;
-    constructor(genes) {
-      this.chromosome = new Chromosome(_Traits.groups, genes);
-      this.energyNeed = 1 + this.get("strength") / 2;
-      this.nutritionalValue = this.energyNeed * 2;
-    }
-    toString() {
-      return this.chromosome.toString();
-    }
-    mutate() {
-      const mutatedChromosome = this.chromosome.mutate();
-      return new _Traits(mutatedChromosome.genes);
+    mostlyCarnivore() {
+      const herbivoreValue = this.genes["Herbivore" /* Herbivore */].value;
+      const carnivoreValue = this.genes["Carnivore" /* Carnivore */].value;
+      return carnivoreValue > herbivoreValue;
     }
     static random() {
-      const chromosome = Chromosome.random(_Traits.groups);
-      return new _Traits(chromosome.genes);
+      return new _Diet(Chromosome.randomGenes(Object.values(DietGenes)));
     }
-    get(trait) {
-      return this.chromosome.genes[trait].value;
+    static randomHerbivore() {
+      const genes = {};
+      genes["Herbivore" /* Herbivore */] = Gene.random();
+      genes["Scavenger" /* Scavenger */] = new Gene(0);
+      genes["Carnivore" /* Carnivore */] = new Gene(0);
+      return new _Diet(genes);
     }
-    canEscape(predator) {
-      for (const group of _Traits.groups) {
-        for (const trait of group) {
-          const preyValue = this.get(trait);
-          const predatorValue = predator.get(trait);
-          if (preyValue > predatorValue) {
-            return true;
-          }
-        }
-      }
-      return false;
+    static randomCarnivore() {
+      const genes = {};
+      genes["Herbivore" /* Herbivore */] = new Gene(0);
+      genes["Scavenger" /* Scavenger */] = new Gene(0);
+      genes["Carnivore" /* Carnivore */] = Gene.random();
+      return new _Diet(genes);
     }
   };
 
   // src/individual.ts
   var Individual = class _Individual {
     static maxEnergy = 4;
-    static adultAge = 2;
-    id;
+    static reproductiveAge = 2;
+    id = "";
+    // assigned by state
     birthday;
     parent;
     deathDay = null;
     eaten = false;
     starved = false;
-    strategy;
-    traits;
-    lastEvent = "";
+    brain;
     diet;
-    energy = 2;
-    shelter = false;
+    events = [];
+    energy;
+    // TODO: calculate based on traits
+    // don't forget to recalculate when traits change
+    nutritionalValue = 2;
+    energyNeed = 1;
     children = [];
-    constructor(birthday, parent, traits, diet, strategy) {
-      this.id = "";
+    constructor(birthday, parent, brain, diet) {
       this.birthday = birthday;
       this.parent = parent;
-      this.strategy = strategy;
-      this.traits = traits;
+      this.brain = brain;
       this.diet = diet;
-      this.energy = 3;
+      this.energy = 2;
+    }
+    toString() {
+      return `${this.brain.toString()}-${this.diet.toString()}`;
+    }
+    toColor() {
+      return this.diet.toColor();
     }
     static random(birthday) {
-      const randomDiet = Object.values(Diet)[Math.floor(Math.random() * Object.values(Diet).length)];
-      const newIndividual = new _Individual(birthday, null, Traits.random(), randomDiet, Strategy.random(randomDiet));
+      const herbivore = Math.random() < 0.5;
+      const randomDiet = herbivore ? Diet.randomHerbivore() : Diet.randomCarnivore();
+      const newIndividual = new _Individual(birthday, null, Brain.random(), randomDiet);
       return newIndividual;
     }
     getAge(today) {
@@ -329,31 +270,13 @@
       }
       return today - this.birthday;
     }
-    getCategory(today) {
-      if (this.starved) return 3 /* Starved */;
-      if (this.eaten) return 2 /* Eaten */;
-      if (this.getAge(today) < _Individual.adultAge) return 4 /* Young */;
-      return 1 /* Adult */;
-    }
-    canBeHuntedBy(predator, today) {
-      if (this.deathDay) {
-        return false;
-      }
-      if (this.shelter) {
-        return false;
-      }
-      if (this.getAge(today) == 0) {
-        return false;
-      }
-      return this.traits.canEscape(predator.traits);
-    }
     eat(nutritionalValue) {
       this.energy = Math.min(_Individual.maxEnergy, this.energy + nutritionalValue);
     }
     createChild(today) {
-      const evolvedStrategy = this.strategy.mutate();
-      const evolvedTraits = this.traits.mutate();
-      const baby = new _Individual(today, this, evolvedTraits, this.diet, evolvedStrategy);
+      const evolvedBrain = this.brain;
+      const evolvedDiet = this.diet;
+      const baby = new _Individual(today, this, evolvedBrain, evolvedDiet);
       this.children.push(baby);
       return baby;
     }
@@ -378,7 +301,7 @@
     getOffspringSum() {
       return this.getOffspringCounts().reduce((sum, val) => sum + val, 0);
     }
-    // returns the first parent and any living older parents, from old to new
+    // returns the first parent (dead or alive) and any living older parents, from old to new
     getParentIds() {
       const parents = [];
       if (this.parent) {
@@ -394,183 +317,144 @@
       }
       return parents.map((parent) => parent.id);
     }
-    leaveShelter() {
-      if (this.shelter) {
-        this.shelter = false;
-        return true;
-      }
-      return false;
-    }
     hasHunger() {
       return this.energy <= _Individual.maxEnergy - 1;
+    }
+    dieEaten(today, eaterId) {
+      this.eaten = true;
+      this.events.push(`${eaterId} \u{1F969}`);
+      this.die(today);
+    }
+    dieStarved(today) {
+      this.starved = true;
+      this.die(today);
     }
     die(today) {
       this.deathDay = today;
     }
+    logEulogy(today) {
+      let eulogy = `${this.id} died at age ${this.getAge(today)}`;
+      if (this.eaten) {
+        eulogy += " (eaten)";
+      }
+      if (this.starved) {
+        eulogy += " (starved)";
+      }
+      const showLastEvents = 5;
+      for (let i = Math.max(5, this.events.length) - showLastEvents; i < this.events.length; i++) {
+        eulogy += `
+${i + 1} ${this.events[i]}`;
+      }
+      console.log(eulogy);
+    }
   };
 
   // src/action.ts
-  function leftShelterSymbol(leftShelter) {
-    return leftShelter ? "\u{1F3C3}\u{1F3FB}\u200D\u2642\uFE0F\u200D\u27A1\uFE0F" : "";
-  }
   var Action = class {
-    static actionGroups = [
-      ["GatherAction", "HuntAction", "ScavengeAction"],
-      ["HideAction", "ReproduceAction", "FeedChildAction"]
-    ];
     individual;
     constructor(individual) {
       this.individual = individual;
     }
   };
   var GatherAction = class extends Action {
-    leftShelter = false;
     isPossible(state) {
       const hungry = this.individual.hasHunger();
-      const foodAvailable = state.environment.food > 0;
-      const canGather = this.individual.diet == "herbivore" /* HERBIVORE */ || this.individual.diet == "omnivore" /* OMNIVORE */;
-      return hungry && foodAvailable && canGather;
+      const foodAvailable = state.environment.remainingFood > 0;
+      const mostlyHerbivore = this.individual.diet.mostlyHerbivore();
+      return hungry && foodAvailable && mostlyHerbivore;
     }
     execute(state) {
-      this.leftShelter = this.individual.leaveShelter();
-      if (this.leftShelter) {
-        state.environment.shelter++;
-      }
-      this.individual.eat(1);
-      state.environment.food--;
+      this.individual.eat(1.5);
+      state.environment.remainingFood--;
+      return 0.5;
     }
     toString() {
-      return `${leftShelterSymbol(this.leftShelter)}\u{1F955}`;
+      return `\u{1F955}`;
     }
   };
   var HuntAction = class extends Action {
-    possibleVictims = [];
     victim = null;
-    leftShelter = false;
     isPossible(state) {
-      const eatsMeat = this.individual.diet === "carnivore" /* CARNIVORE */ || this.individual.diet === "omnivore" /* OMNIVORE */;
       const hungry = this.individual.hasHunger();
-      const baby = this.individual.getAge(state.day) <= 1;
-      if (!eatsMeat || !hungry || baby) {
+      const mostlyCarnivore = this.individual.diet.mostlyCarnivore();
+      return hungry && mostlyCarnivore;
+    }
+    isPossibleVictim(victim) {
+      if (victim.deathDay) {
         return false;
       }
-      this.possibleVictims = state.getIndividualsArray().filter(
-        (v) => !v.shelter && // can't hunt sheltered individuals
-        // v.diet !== this.individual.diet && // can't hunt individuals with the same diet
-        v.id !== this.individual.id && // don't hunt yourself
-        v.id !== this.individual.parent?.id && // don't hunt your parent
-        v.parent?.id !== this.individual.id && // don't hunt your children
-        !Strategy.similar(v.strategy, this.individual.strategy) && // don't hunt similar strategy (family)
-        v.canBeHuntedBy(this.individual, state.day)
-      );
-      return this.possibleVictims.length > 0;
+      if (victim.diet.mostlyCarnivore()) {
+        return false;
+      }
+      if (victim.id === this.individual.id) {
+        return false;
+      }
+      if (victim.id === this.individual.parent?.id) {
+        return false;
+      }
+      if (victim.parent?.id === this.individual.id) {
+        return false;
+      }
+      return true;
     }
     execute(state) {
-      if (this.individual.leaveShelter()) {
-        state.environment.shelter++;
+      const energyCost = 1;
+      const possibleVictims = state.individuals.filter((v) => this.isPossibleVictim(v));
+      if (possibleVictims.length === 0) {
+        console.log(`${this.individual.id} hunts but there are no possible victims`);
+        return energyCost;
       }
-      this.victim = this.possibleVictims[Math.floor(Math.random() * this.possibleVictims.length)];
-      if (!this.victim.canBeHuntedBy(this.individual, state.day)) {
-        console.error(`Victim ${this.victim.id} is no longer a valid victim for hunter ${this.individual.id}`);
-        console.log(this.victim);
-        console.log(this.individual);
-        return;
+      const victimConcentration = possibleVictims.length / state.environment.maxFood;
+      const victimConcentrationLuck = Math.random();
+      if (victimConcentrationLuck < victimConcentration) {
+        this.victim = possibleVictims[Math.floor(Math.random() * possibleVictims.length)];
+      } else {
+        return energyCost;
       }
-      this.individual.eat(this.victim.traits.nutritionalValue);
-      this.victim.eaten = true;
-      this.victim.deathDay = state.day;
-      if (this.victim.shelter) {
-        state.environment.shelter++;
+      const victimRatio = possibleVictims.length / state.individuals.length;
+      const victimRatioLuck = Math.random();
+      if (victimRatioLuck < victimRatio) {
+        this.victim = possibleVictims[Math.floor(Math.random() * possibleVictims.length)];
+      } else {
+        return energyCost;
       }
-      state.environment.bodies.push(new Body(this.victim.id, this.victim.traits.nutritionalValue, state.day));
-      console.log("Added body:", this.victim.id, state.environment.bodies);
+      this.individual.eat(this.victim.nutritionalValue);
+      this.victim.dieEaten(state.day, this.individual.id);
+      return energyCost;
     }
     toString() {
       let victimId = this.victim ? this.victim.id : "\u274C";
-      return `${leftShelterSymbol(this.leftShelter)}\u{1F357} ${victimId}`;
-    }
-  };
-  var ScavengeAction = class extends Action {
-    bodyId = "";
-    leftShelter = false;
-    isPossible(state) {
-      const isScavenger = this.individual.diet === "scavenger" /* SCAVENGER */;
-      const hungry = this.individual.hasHunger();
-      const bodiesAvailable = state.environment.bodies.length > 0;
-      return isScavenger && hungry && bodiesAvailable;
-    }
-    execute(state) {
-      const leftShelter = this.individual.leaveShelter();
-      if (leftShelter) {
-        state.environment.shelter++;
-      }
-      this.bodyId = state.environment.bodies[Math.floor(Math.random() * state.environment.bodies.length)].id;
-      const nutritionalValue = state.individuals[this.bodyId].traits.nutritionalValue;
-      this.individual.eat(nutritionalValue);
-      state.environment.removeBody(this.bodyId);
-    }
-    toString() {
-      return `${leftShelterSymbol(this.leftShelter)}\u{1F9B4} ${this.bodyId}`;
-    }
-  };
-  var HideAction = class extends Action {
-    isPossible(state) {
-      const notSheltered = !this.individual.shelter;
-      const shelterAvailable = state.environment.shelter > 0;
-      return notSheltered && shelterAvailable;
-    }
-    execute(state) {
-      this.individual.shelter = true;
-      state.environment.shelter--;
-    }
-    toString() {
-      return `\u{1F6E1}\uFE0F`;
+      return `\u{1F969} ${victimId}`;
     }
   };
   var ReproduceAction = class extends Action {
     cloneIds = [];
     isPossible(state) {
-      const isAdult = this.individual.getAge(state.day) >= Individual.adultAge;
-      const hasEnergy = this.individual.energy >= 1;
+      const isAdult = this.individual.getAge(state.day) >= Individual.reproductiveAge;
+      const hasEnergy = this.individual.energy >= 2;
       return isAdult && hasEnergy;
     }
     execute(state) {
-      for (let i = 0; i < Math.floor(this.individual.energy); i++) {
+      const spendableEnergy = Math.floor(this.individual.energy);
+      const numberOfChildren = Math.min(2, spendableEnergy);
+      for (let i = 0; i < numberOfChildren; i++) {
         const baby = this.individual.createChild(state.day);
         state.saveIndividual(baby);
         this.cloneIds.push(baby.id);
       }
+      return numberOfChildren;
     }
     toString() {
       return `\u{1F476} ${this.cloneIds.join(" ")}`;
     }
   };
-  var FeedChildAction = class extends Action {
-    child = null;
-    isPossible(state) {
-      const hasEnergy = this.individual.energy > 1;
-      const hasChildren = this.individual.children.length > 0;
-      this.child = this.individual.children[Math.floor(Math.random() * this.individual.children.length)];
-      return hasEnergy && hasChildren;
-    }
-    execute(state) {
-      this.child?.eat(1);
-    }
-    toString() {
-      return `\u{1F37C}\u{1F476} ${this.child?.id}`;
-    }
-  };
   var allActions = [
     GatherAction,
     HuntAction,
-    ScavengeAction,
-    HideAction,
-    ReproduceAction,
-    FeedChildAction
+    ReproduceAction
   ];
 
   // src/iterations.ts
-  var debugAction = null;
   var Iterations = class {
     state;
     constructor(state) {
@@ -589,30 +473,29 @@
       for (let i = 0; i < iterations; i++) {
         this.state.archiveDeadIndividuals();
         this.state.day++;
-        this.addIndividuals();
         this.state.updateEnvironment();
         this.actAllIndividuals();
         this.starveIndividuals();
-        if (this.state.getIndividualsArray().filter((individual) => !individual.deathDay).length == 0) {
+        if (this.state.individuals.filter((individual) => !individual.deathDay).length == 0) {
           alert("All individuals have died.");
         }
       }
     }
     addIndividuals() {
       const minimalIndividuals = 5;
-      const maxMigratingIndividuals = Math.max(0, minimalIndividuals - this.state.getIndividualsArray().length);
+      const maxMigratingIndividuals = Math.max(0, minimalIndividuals - this.state.individuals.length);
       const migratingIndividuals = Math.random() * maxMigratingIndividuals;
       for (let i = 0; i < migratingIndividuals; i++) {
         this.state.saveIndividual(Individual.random(this.state.day));
       }
     }
     actAllIndividuals() {
-      const individualsArray = this.state.getIndividualsArray();
-      for (let i = individualsArray.length - 1; i > 0; i--) {
+      const individuals = this.state.individuals;
+      for (let i = individuals.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1));
-        [individualsArray[i], individualsArray[j]] = [individualsArray[j], individualsArray[i]];
+        [individuals[i], individuals[j]] = [individuals[j], individuals[i]];
       }
-      for (const individual of individualsArray) {
+      for (const individual of individuals) {
         this.actIndividual(individual);
       }
     }
@@ -621,70 +504,92 @@
         return;
       }
       if (individual.getAge(this.state.day) == 0) {
+        individual.events.push("\u{1F4C8}");
         return;
       }
       const possibleActions = [];
       for (const ActionClass of allActions) {
-        const action = new ActionClass(individual);
-        if (action.isPossible(this.state)) {
-          possibleActions.push(action);
+        const action2 = new ActionClass(individual);
+        if (action2.isPossible(this.state)) {
+          possibleActions.push(action2);
         }
       }
-      if (possibleActions.length > 0) {
-        let action = individual.strategy.decide(possibleActions, individual);
-        if (action && debugAction && possibleActions.some((a) => a instanceof debugAction) && !(action instanceof debugAction)) {
-          const oldAction = action.toString();
-          action = possibleActions.find((a) => a instanceof debugAction);
-          const newAction = action.toString();
-          console.log(`Debug: ${individual.id} will do ${newAction} instead of ${oldAction}`);
-        }
-        action?.execute(this.state);
-        individual.lastEvent = action?.toString() ?? "x";
+      let action = individual.brain.decide(possibleActions);
+      if (action) {
+        action.execute(this.state);
+        individual.events.push(action.toString());
       } else {
-        individual.lastEvent = "x";
+        individual.events.push("x");
       }
-      individual.energy -= individual.traits.energyNeed;
+      individual.energy -= individual.energyNeed;
     }
     starveIndividuals() {
       let starvedIndividuals = 0;
-      for (let individual of this.state.getIndividualsArray()) {
+      for (let individual of this.state.individuals) {
         if (individual.energy <= 0 && !individual.deathDay && individual.getAge(this.state.day) > 0) {
-          individual.starved = true;
-          individual.deathDay = this.state.day;
-          if (individual.shelter) {
-            this.state.environment.shelter++;
-          }
+          individual.dieStarved(this.state.day);
           starvedIndividuals++;
         }
       }
     }
   };
 
+  // src/environment.ts
+  var Environment = class {
+    uneatenFood;
+    grownFood;
+    remainingFood;
+    maxFood;
+    constructor(maxFood) {
+      this.maxFood = maxFood;
+      this.uneatenFood = -1;
+      this.grownFood = -1;
+      this.remainingFood = 0;
+      this.nextDay();
+    }
+    toFoodString() {
+      return `${this.uneatenFood} -> ${this.grownFood} -> ${this.remainingFood}`;
+    }
+    nextDay() {
+      this.uneatenFood = this.remainingFood;
+      this.grownFood = Math.round((this.uneatenFood + this.maxFood) / 2);
+      this.remainingFood = this.grownFood;
+    }
+  };
+
   // src/state.ts
-  var State = class _State {
-    static targetIndividuals = 30;
+  var State = class {
     day;
-    individuals = {};
+    individualsById = {};
+    individuals = [];
     individualIdCounter = -1;
-    environment = new Environment(this, []);
+    environment;
     constructor() {
-      const initialDays = 2;
       this.day = 0;
-      const initialIndividuals = _State.targetIndividuals / 2 ** initialDays;
-      for (let i = 0; i < initialIndividuals; i++) {
-        this.saveIndividual(Individual.random(this.day));
+      this.createInitialIndividuals();
+      this.environment = new Environment(50);
+    }
+    createInitialIndividuals() {
+      const firstIndividuals = [
+        new Individual(this.day, null, Brain.debugHerbivore(), Diet.randomHerbivore()),
+        new Individual(this.day, null, Brain.debugHerbivore(), Diet.randomHerbivore()),
+        new Individual(this.day, null, Brain.debugCarnivore(), Diet.randomCarnivore())
+      ];
+      for (const individual of firstIndividuals) {
+        this.saveIndividual(individual);
       }
-      for (let i = 0; i < initialDays; i++) {
-        this.day += 1;
-        for (const individual of this.getIndividualsArray()) {
+      const growingDays = 3;
+      const newChildren = [];
+      for (let i = 0; i < growingDays; i++) {
+        this.day++;
+        for (const individual of this.individuals) {
           const child = individual.createChild(this.day);
-          this.saveIndividual(child);
+          newChildren.push(child);
         }
       }
-      this.individuals = Object.fromEntries(Object.entries(this.individuals).filter(([_, individual]) => individual.birthday > 0));
-    }
-    getIndividualsArray() {
-      return Object.values(this.individuals);
+      for (const child of newChildren) {
+        this.saveIndividual(child);
+      }
     }
     nextIndividualId() {
       this.individualIdCounter++;
@@ -703,55 +608,27 @@
     }
     saveIndividual(individual) {
       individual.id = this.nextIndividualId();
-      this.individuals[individual.id] = individual;
+      this.individualsById[individual.id] = individual;
+      this.individuals.push(individual);
     }
     updateEnvironment() {
-      console.log(this.environment.bodies);
-      const freshBodies = this.environment.bodies.filter((individual) => individual.deathDay == this.day);
-      console.log("->", freshBodies);
-      this.environment = new Environment(this, freshBodies);
+      this.environment.nextDay();
     }
     livingIndividualCount() {
-      return Object.values(this.individuals).filter((individual) => !individual.deathDay).length;
+      return this.individuals.filter((individual) => !individual.deathDay).length;
     }
     archiveDeadIndividuals() {
-      for (let individualId of Object.keys(this.individuals)) {
-        if (this.individuals[individualId].deathDay) {
-          delete this.individuals[individualId];
+      for (let individualId of Object.keys(this.individualsById)) {
+        if (this.individualsById[individualId].deathDay) {
+          delete this.individualsById[individualId];
         }
       }
-    }
-  };
-  var Environment = class {
-    initialFood;
-    food;
-    initialShelter;
-    shelter;
-    bodies = [];
-    minFoodFactor = 0.3;
-    maxFoodFactor = 0.7;
-    minShelterFactor = 0.1;
-    maxShelterFactor = 0.2;
-    constructor(state, bodies) {
-      const foodFactor = this.minFoodFactor + Math.random() * (this.maxFoodFactor - this.minFoodFactor);
-      const shelterFactor = this.minShelterFactor + Math.random() * (this.maxShelterFactor - this.minShelterFactor);
-      this.initialFood = Math.round(foodFactor * State.targetIndividuals);
-      this.initialShelter = Math.round(shelterFactor * State.targetIndividuals);
-      const shelteredIndividuals = state.getIndividualsArray().filter((individual) => individual.shelter).length;
-      this.initialShelter -= shelteredIndividuals;
-      if (this.initialShelter < 0) {
-        this.initialShelter = 0;
-      }
-      this.food = this.initialFood;
-      this.shelter = this.initialShelter;
-      this.bodies = bodies;
-    }
-    removeBody(bodyId) {
-      this.bodies = this.bodies.filter((body) => body.id !== bodyId);
+      this.individuals = Object.values(this.individualsById);
     }
   };
 
   // src/ui.ts
+  window.onload = () => new UI();
   var UI = class {
     state;
     iterations;
@@ -766,6 +643,7 @@
       document.getElementById("next-1-btn").addEventListener("click", () => this.nextIteration(1));
       document.getElementById("next-10-btn").addEventListener("click", () => this.nextIteration(10));
       document.getElementById("next-100-btn").addEventListener("click", () => this.nextIteration(100));
+      document.getElementById("next-1000-btn").addEventListener("click", () => this.nextIteration(1e3));
       document.getElementById("play-pause-btn").addEventListener("click", () => this.togglePlay());
       document.getElementById("speed-btn").addEventListener("click", () => this.toggleSpeed());
     }
@@ -789,6 +667,88 @@
       document.getElementById("play-pause-btn").textContent = "\u23F8 Pause";
       btn.textContent = this.playFast ? "Slower" : "Faster";
     }
+    nextIteration(amount) {
+      this.iterations.execute(amount);
+      this.updateUI();
+    }
+    updateUI() {
+      this.updateTitles();
+      this.showEnvironment();
+      new IndividualsDetails(this.state.individuals, this.state.day).showIndividuals();
+    }
+    updateTitles() {
+      document.getElementById("iteration-title").innerText = `Iteration ${this.state.day}`;
+      document.getElementById("individuals-title").innerText = `Individuals (${this.state.individuals.length})`;
+    }
+    showEnvironment() {
+      const environmentDiv = document.getElementById("environment");
+      environmentDiv.innerHTML = "";
+      const food = document.createElement("p");
+      food.innerText = this.state.environment.toFoodString();
+      environmentDiv.appendChild(food);
+    }
+  };
+  var IndividualsDetails = class {
+    individuals;
+    day;
+    constructor(individuals, day) {
+      this.individuals = individuals;
+      this.day = day;
+    }
+    showIndividuals() {
+      if (this.individuals.length === 0) return;
+      const individualsDiv = document.getElementById("individuals");
+      individualsDiv.innerHTML = "";
+      const alive = this.individuals.filter((individual) => !individual.deathDay);
+      const eaten = this.individuals.filter((individual) => individual.eaten);
+      const starved = this.individuals.filter((individual) => individual.starved);
+      const columnsWrapper = document.createElement("div");
+      columnsWrapper.className = "individuals-columns";
+      const leftColumn = document.createElement("div");
+      leftColumn.className = "column";
+      this.appendCategory(leftColumn, "Alive", alive);
+      const rightColumn = document.createElement("div");
+      rightColumn.className = "column";
+      this.appendCategory(rightColumn, "Eaten", eaten);
+      this.appendCategory(rightColumn, "Starved", starved);
+      columnsWrapper.appendChild(leftColumn);
+      columnsWrapper.appendChild(rightColumn);
+      individualsDiv.appendChild(columnsWrapper);
+    }
+    appendCategory(container, category, individuals) {
+      const categoryTitle = document.createElement("h4");
+      categoryTitle.innerText = `${category} (${individuals.length})`;
+      container.appendChild(categoryTitle);
+      if (individuals.length === 0) return;
+      this.sortIndividualsWithinCategory(individuals);
+      const table = this.createTable(individuals);
+      container.appendChild(table);
+    }
+    valuesForIndividual(individual, includeDeath) {
+      if (!individual) {
+        console.error("Individual is undefined");
+        return {};
+      }
+      const values = {
+        "ID": individual.id,
+        "Age \u25BC": individual.getAge(this.day).toString(),
+        [`Diet
+${Diet.geneLabels}`]: individual.diet.toString(),
+        [`Brain
+${Brain.geneLabels}`]: individual.brain.toString(),
+        "Action": individual.events[individual.events.length - 1] || "",
+        "Energy": this.energyLabel(individual.energy),
+        "Ancestors": this.ancestorLabel(individual),
+        "Offspring": individual.getOffspringCounts().toString()
+      };
+      Object.entries(values).forEach(([key, value]) => {
+        if (value === void 0) {
+          console.error(`Value for ${key} is undefined for individual ${individual.id}`);
+          console.error(individual);
+        }
+      });
+      return values;
+    }
     energyLabel(energy) {
       const energyLabels = ["\u{1F534}", "\u{1F7E0}", "\u{1F7E1}", "\u{1F7E2}"];
       if (energy > energyLabels.length - 1) {
@@ -799,15 +759,6 @@
       }
       return energyLabels[Math.round(energy)];
     }
-    healthLabel(individual) {
-      if (individual.deathDay) {
-        return individual.starved ? "\u{1F480}\u{1F37D}\uFE0F" : "\u{1F480}\u{1F357}";
-      }
-      if (individual.getAge(this.state.day) == 0) {
-        return "\u{1F476}";
-      }
-      return "\u{1FAC0}";
-    }
     ancestorLabel(individual) {
       if (!individual.parent) {
         return "x";
@@ -817,88 +768,25 @@
       }
       return individual.getParentIds().join(", ");
     }
-    nextIteration(amount) {
-      this.iterations.execute(amount);
-      this.updateUI();
-    }
-    updateUI() {
-      this.updateTitles();
-      this.showEnvironment();
-      this.showIndividuals();
-    }
-    updateTitles() {
-      document.getElementById("iteration-title").innerText = `Iteration ${this.state.day}`;
-      document.getElementById("individuals-title").innerText = `Individuals (${this.state.getIndividualsArray().length})`;
-    }
     sortIndividualsWithinCategory(individuals) {
       return individuals.sort((a, b) => {
         if (a.deathDay && b.deathDay && a.deathDay != b.deathDay) {
           return b.deathDay - a.deathDay;
         }
-        return b.getAge(this.state.day) - a.getAge(this.state.day) || b.getOffspringSum() - a.getOffspringSum() || a.id.localeCompare(b.id);
+        return b.getAge(this.day) - a.getAge(this.day) || b.getOffspringSum() - a.getOffspringSum() || a.id.localeCompare(b.id);
       });
     }
-    valuesForIndividual(individual, includeDeath) {
-      if (!individual) {
-        console.error("Individual is undefined");
-        return {};
-      }
-      const values = {
-        "ID": individual.id,
-        "Age \u25BC": individual.getAge(this.state.day).toString(),
-        [`Traits
-${Traits.headerString}`]: individual.traits.toString(),
-        [`Strategy
-${Strategy.headerString}`]: individual.strategy.toString(),
-        "Action": individual.lastEvent,
-        "Energy": this.energyLabel(individual.energy),
-        "Shelter": individual.shelter ? "\u{1F6E1}\uFE0F" : "\u{1F441}\uFE0F",
-        "Ancestors": this.ancestorLabel(individual),
-        "Offspring": individual.getOffspringCounts().toString()
-      };
-      if (includeDeath) {
-        values["Death"] = individual.deathDay === null ? "" : (individual.deathDay - this.state.day).toString();
-      }
-      Object.entries(values).forEach(([key, value]) => {
-        if (value === void 0) {
-          console.error(`Value for ${key} is undefined for individual ${individual.id}`);
-          console.log(individual);
-        }
-      });
-      return values;
-    }
-    showIndividuals() {
-      const individualsDiv = document.getElementById("individuals");
-      individualsDiv.innerHTML = "";
-      const individualsArray = this.state.getIndividualsArray().filter((individual) => !individual.deathDay || individual.deathDay == this.state.day);
-      if (individualsArray.length === 0) return;
-      const individualsByCategory = this.divideIndividualsByCategory(individualsArray);
-      for (let [category, individuals] of individualsByCategory) {
-        const categoryTitle = document.createElement("h4");
-        categoryTitle.innerText = `${IndividualCategory[category]} (${individuals.length})`;
-        individualsDiv.appendChild(categoryTitle);
-        if (individuals.length === 0) {
-          continue;
-        }
-        this.sortIndividualsWithinCategory(individuals);
-        const table = this.createTable(individuals);
-        individualsDiv.appendChild(table);
-      }
-    }
-    divideIndividualsByCategory(individuals) {
-      const individualsByCategory = /* @__PURE__ */ new Map();
-      for (let category of Object.values(IndividualCategory).filter((v) => typeof v === "number")) {
-        individualsByCategory.set(category, []);
-      }
+    createTable(individuals) {
+      const table = document.createElement("table");
+      this.addHeader(table);
       for (let individual of individuals) {
-        const category = individual.getCategory(this.state.day);
-        individualsByCategory.get(category).push(individual);
+        this.addIndividualRow(table, individual);
       }
-      return individualsByCategory;
+      return table;
     }
     addHeader(table) {
       const headerRow = document.createElement("tr");
-      const headers = Object.keys(this.valuesForIndividual(this.state.getIndividualsArray()[0], true));
+      const headers = Object.keys(this.valuesForIndividual(this.individuals[0], true));
       headers.forEach((header) => {
         const th = document.createElement("th");
         th.innerText = header;
@@ -914,30 +802,8 @@ ${Strategy.headerString}`]: individual.strategy.toString(),
         td.innerText = value.toString();
         row.appendChild(td);
       });
-      row.style.backgroundColor = individual.strategy.toColor();
+      row.style.backgroundColor = individual.toColor();
       table.appendChild(row);
     }
-    createTable(individuals) {
-      const table = document.createElement("table");
-      this.addHeader(table);
-      for (let individual of individuals) {
-        this.addIndividualRow(table, individual);
-      }
-      return table;
-    }
-    showEnvironment() {
-      const environmentDiv = document.getElementById("environment");
-      environmentDiv.innerHTML = "";
-      const food = document.createElement("p");
-      food.innerText = `${this.state.environment.initialFood} -> ${this.state.environment.food} food`;
-      environmentDiv.appendChild(food);
-      const shelter = document.createElement("p");
-      shelter.innerText = `${this.state.environment.initialShelter} -> ${this.state.environment.shelter} shelter`;
-      environmentDiv.appendChild(shelter);
-      const bodies = document.createElement("p");
-      bodies.innerText = `${this.state.environment.bodies.length} bodies unscavenged`;
-      environmentDiv.appendChild(bodies);
-    }
   };
-  window.onload = () => new UI();
 })();

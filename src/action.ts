@@ -1,23 +1,10 @@
-import { Body } from "./body.js";
-import { Diet } from "./enums.js";
 import { Individual } from "./individual.js";
 import { State } from "./state.js";
 
-import { Chromosome } from "./genetics/chromosome.js";
-import { Gene } from "./genetics/gene.js";
-import { Strategy } from "./genetics/strategy.js";
+import { Brain } from "./genetics/brain.js";
 
-function leftShelterSymbol(leftShelter: boolean): string {
-    return leftShelter ? "🏃🏻‍♂️‍➡️" : "";
-}
 
 export abstract class Action {
-
-    static actionGroups = [
-        ["GatherAction", "HuntAction", "ScavengeAction"],
-        ["HideAction", "ReproduceAction", "FeedChildAction"]
-    ];
-
 
     individual: Individual;
 
@@ -27,148 +14,109 @@ export abstract class Action {
 
     abstract isPossible(state: State): boolean;
 
-    abstract execute(state: State): void;
+    abstract execute(state: State): number;
 
     abstract toString(): string;
 }
 
 export class GatherAction extends Action {
-    leftShelter = false;
-
     isPossible(state: State): boolean {
         const hungry = this.individual.hasHunger();
-        const foodAvailable = state.environment.food > 0;
-        const canGather = this.individual.diet == Diet.HERBIVORE || this.individual.diet == Diet.OMNIVORE;
+        const foodAvailable = state.environment.remainingFood > 0;
+        const mostlyHerbivore = this.individual.diet.mostlyHerbivore();
 
-        return hungry && foodAvailable && canGather;
+        return hungry && foodAvailable && mostlyHerbivore;
     }
 
     execute(state: State) {
-        this.leftShelter = this.individual.leaveShelter();
-        if (this.leftShelter) {
-            state.environment.shelter++;
-        }
+        this.individual.eat(1.5);
 
-        this.individual.eat(1);
+        state.environment.remainingFood--;
 
-        state.environment.food--;
+        return 0.5;
     }
 
     toString() {
-        return `${leftShelterSymbol(this.leftShelter)}🥕`;
+        return `🥕`;
     }
 }
 
 export class HuntAction extends Action {
-    possibleVictims: Individual[] = [];
     victim: Individual | null = null;
-    leftShelter = false;
 
     isPossible(state: State): boolean {
-        const eatsMeat = this.individual.diet === Diet.CARNIVORE || this.individual.diet === Diet.OMNIVORE;
         const hungry = this.individual.hasHunger();
-        const baby = this.individual.getAge(state.day) <= 1;
+        const mostlyCarnivore = this.individual.diet.mostlyCarnivore();
 
-        if (!eatsMeat || !hungry || baby) {
+        return hungry && mostlyCarnivore;
+    }
+
+    isPossibleVictim(victim: Individual): boolean {
+        // can't hunt dead individual
+        if (victim.deathDay) {
             return false;
         }
-
-        // TODO: make this easier to read by moving the filtering logic to a separate method
-        this.possibleVictims = state.getIndividualsArray().filter(v =>
-            !v.shelter && // can't hunt sheltered individuals
-            // v.diet !== this.individual.diet && // can't hunt individuals with the same diet
-            v.id !== this.individual.id && // don't hunt yourself
-            v.id !== this.individual.parent?.id && // don't hunt your parent
-            v.parent?.id !== this.individual.id && // don't hunt your children
-            !Strategy.similar(v.strategy, this.individual.strategy) && // don't hunt similar strategy (family)
-            v.canBeHuntedBy(this.individual, state.day)
-        );
-        return this.possibleVictims.length > 0;
+        // don't hunt carnivores (at least for now)
+        if (victim.diet.mostlyCarnivore()) {
+            return false;
+        }
+        // can't hunt yourself
+        if (victim.id === this.individual.id) {
+            return false;
+        }
+        // don't hunt your parent
+        if (victim.id === this.individual.parent?.id) {
+            return false;
+        }
+        // don't hunt your children
+        if (victim.parent?.id === this.individual.id) {
+            return false;
+        }
+        return true;
     }
 
     execute(state: State) {
-        if (this.individual.leaveShelter()) {
-            state.environment.shelter++;
+        const energyCost = 1;
+
+        const possibleVictims = state.individuals.filter(v => this.isPossibleVictim(v));
+
+        if (possibleVictims.length === 0) {
+            console.log(`${this.individual.id} hunts but there are no possible victims`);
+            return energyCost;
         }
 
-        this.victim = this.possibleVictims[Math.floor(Math.random() * this.possibleVictims.length)];
-
-        if (!this.victim.canBeHuntedBy(this.individual, state.day)) {
-            console.error(`Victim ${this.victim.id} is no longer a valid victim for hunter ${this.individual.id}`);
-            console.log(this.victim);
-            console.log(this.individual);
-            return;
+        // less prey available, less likely to catch one
+        const victimConcentration = possibleVictims.length / state.environment.maxFood;
+        const victimConcentrationLuck = Math.random();
+        if (victimConcentrationLuck < victimConcentration) {
+            this.victim = possibleVictims[Math.floor(Math.random() * possibleVictims.length)];
+            // console.log(`hit ${victimConcentrationLuck.toFixed(2)} < ${victimConcentration.toFixed(2)}`);
+        } else {
+            // console.log(`miss ${victimConcentrationLuck.toFixed(2)} >= ${victimConcentration.toFixed(2)}`);
+            return energyCost;
         }
 
-        // // TODO: make this based on some probability
-        // if (this.victim.traits.canEscape(this.individual.traits)) {
-        //     // escape successful, victim gets away but hunter still loses energy for failed hunt
-        //     return;
-        // }
-
-        this.individual.eat(this.victim.traits.nutritionalValue);
-
-        this.victim.eaten = true;
-        this.victim.deathDay = state.day;
-        if (this.victim.shelter) {
-            state.environment.shelter++;
+        // the more hunters, the more likely it is someone else will catch the victim first
+        const victimRatio = possibleVictims.length / state.individuals.length;
+        const victimRatioLuck = Math.random();
+        if (victimRatioLuck < victimRatio) {
+            this.victim = possibleVictims[Math.floor(Math.random() * possibleVictims.length)];
+            // console.log(`hit ${victimRatioLuck.toFixed(2)} < ${victimRatio.toFixed(2)}`);
+        } else {
+            // console.log(`miss ${victimRatioLuck.toFixed(2)} >= ${victimRatio.toFixed(2)}`);
+            return energyCost;
         }
-        state.environment.bodies.push(new Body(this.victim.id, this.victim.traits.nutritionalValue, state.day));
-        console.log("Added body:", this.victim.id, state.environment.bodies);
+
+        this.individual.eat(this.victim.nutritionalValue);
+        this.victim.dieEaten(state.day, this.individual.id);
+
+        // TODO: return energy cost based on number of victims hunted and on traits
+        return energyCost;
     }
 
     toString(): string {
         let victimId = this.victim ? this.victim.id : "❌";
-        return `${leftShelterSymbol(this.leftShelter)}🍗 ${victimId}`;
-    }
-}
-
-export class ScavengeAction extends Action {
-    bodyId = "";
-    leftShelter = false;
-
-    isPossible(state: State): boolean {
-        const isScavenger = this.individual.diet === Diet.SCAVENGER;
-        const hungry = this.individual.hasHunger();
-        const bodiesAvailable = state.environment.bodies.length > 0;
-
-        return isScavenger && hungry && bodiesAvailable;
-    }
-
-    execute(state: State) {
-        const leftShelter = this.individual.leaveShelter();
-        if (leftShelter) {
-            state.environment.shelter++;
-        }
-
-        this.bodyId = state.environment.bodies[Math.floor(Math.random() * state.environment.bodies.length)].id;
-
-        const nutritionalValue = state.individuals[this.bodyId].traits.nutritionalValue;
-        this.individual.eat(nutritionalValue);
-
-        state.environment.removeBody(this.bodyId);
-    }
-
-    toString(): string {
-        return `${leftShelterSymbol(this.leftShelter)}🦴 ${this.bodyId}`;
-    }
-}
-
-export class HideAction extends Action {
-    isPossible(state: State): boolean {
-        const notSheltered = !this.individual.shelter;
-        const shelterAvailable = state.environment.shelter > 0;
-
-        return notSheltered && shelterAvailable;
-    }
-
-    execute(state: State) {
-        this.individual.shelter = true;
-        state.environment.shelter--;
-    }
-
-    toString() {
-        return `🛡️`;
+        return `🥩 ${victimId}`;
     }
 }
 
@@ -176,20 +124,24 @@ export class ReproduceAction extends Action {
     cloneIds: string[] = [];
 
     isPossible(state: State): boolean {
-        const isAdult = this.individual.getAge(state.day) >= Individual.adultAge;
-        const hasEnergy = this.individual.energy >= 1;
+        const isAdult = this.individual.getAge(state.day) >= Individual.reproductiveAge;
+        const hasEnergy = this.individual.energy >= 2;
 
         return isAdult && hasEnergy;
     }
 
-    execute(state: State) {
-        // const numberOfChildren: number = Math.min(Math.floor(this.individual.energy), 2);
-        const numberOfChildren: number = 1;
+    execute(state: State): number {
+        const spendableEnergy = Math.floor(this.individual.energy);
+        // max 2
+        const numberOfChildren = Math.min(2, spendableEnergy);
+
         for (let i = 0; i < numberOfChildren; i++) {
             const baby = this.individual.createChild(state.day);
             state.saveIndividual(baby);
             this.cloneIds.push(baby.id);
         }
+
+        return numberOfChildren;
     }
 
     toString(): string {
@@ -197,29 +149,6 @@ export class ReproduceAction extends Action {
     }
 }
 
-export class FeedChildAction extends Action {
-    child: Individual | null = null;
-
-    isPossible(state: State): boolean {
-        const hasEnergy = this.individual.energy > 1;
-        const hasChildren = this.individual.children.length > 0;
-
-        this.child = this.individual.children[Math.floor(Math.random() * this.individual.children.length)];
-
-        return hasEnergy && hasChildren;
-    }
-
-    execute(state: State) {
-        this.child?.eat(1);
-    }
-
-    toString(): string {
-        return `🍼👶 ${this.child?.id}`;
-    }
-}
-
 export const allActions = [
-    GatherAction, HuntAction, ScavengeAction,
-    HideAction, ReproduceAction,
-    FeedChildAction,
+    GatherAction, HuntAction, ReproduceAction,
 ];

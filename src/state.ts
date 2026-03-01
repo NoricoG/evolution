@@ -1,40 +1,53 @@
-import { Body } from "./body.js";
+import { Environment } from "./environment.js";
 import { Individual } from "./individual.js";
 
+import { Brain } from "./genetics/brain.js";
+import { Diet } from "./genetics/diet.js";
+
+
 export class State {
-    static targetIndividuals = 30;
 
     day: number;
 
-    individuals: { [id: string]: Individual } = {};
+    individualsById: { [id: string]: Individual } = {};
+    individuals: Individual[] = [];
 
     individualIdCounter = -1;
 
-    environment = new Environment(this, []);
+    environment: Environment;
 
     constructor() {
-        const initialDays = 2;
 
         this.day = 0;
 
-        const initialIndividuals = State.targetIndividuals / (2 ** initialDays);
-        for (let i = 0; i < initialIndividuals; i++) {
-            this.saveIndividual(Individual.random(this.day));
-        }
+        this.createInitialIndividuals();
 
-        for (let i = 0; i < initialDays; i++) {
-            this.day += 1;
-            for (const individual of this.getIndividualsArray()) {
-                const child = individual.createChild(this.day);
-                this.saveIndividual(child);
-            }
-        }
-
-        this.individuals = Object.fromEntries(Object.entries(this.individuals).filter(([_, individual]) => individual.birthday > 0));
+        this.environment = new Environment(50);
     }
 
-    getIndividualsArray(): Individual[] {
-        return Object.values(this.individuals);
+    private createInitialIndividuals() {
+        const firstIndividuals = [
+            new Individual(this.day, null, Brain.debugHerbivore(), Diet.randomHerbivore()),
+            new Individual(this.day, null, Brain.debugHerbivore(), Diet.randomHerbivore()),
+            new Individual(this.day, null, Brain.debugCarnivore(), Diet.randomCarnivore())
+        ];
+
+        for (const individual of firstIndividuals) {
+            this.saveIndividual(individual);
+        }
+
+        const growingDays = 3;
+        const newChildren = [];
+        for (let i = 0; i < growingDays; i++) {
+            this.day++;
+            for (const individual of this.individuals) {
+                const child = individual.createChild(this.day);
+                newChildren.push(child);
+            }
+        }
+        for (const child of newChildren) {
+            this.saveIndividual(child);
+        }
     }
 
     nextIndividualId(): string {
@@ -73,63 +86,25 @@ export class State {
 
     saveIndividual(individual: Individual) {
         individual.id = this.nextIndividualId();
-        this.individuals[individual.id] = individual;
+        this.individualsById[individual.id] = individual;
+        this.individuals.push(individual);
     }
 
     updateEnvironment() {
-        console.log(this.environment.bodies);
-        const freshBodies = this.environment.bodies.filter(individual => individual.deathDay == this.day);
-        console.log("->", freshBodies);
-        this.environment = new Environment(this, freshBodies);
+        this.environment.nextDay();
     }
 
     livingIndividualCount(): number {
-        return Object.values(this.individuals).filter(individual => !individual.deathDay).length;
+        return this.individuals.filter(individual => !individual.deathDay).length;
     }
 
     archiveDeadIndividuals() {
         // cleanup
-        for (let individualId of Object.keys(this.individuals)) {
-            if (this.individuals[individualId].deathDay) {
-                delete this.individuals[individualId];
+        for (let individualId of Object.keys(this.individualsById)) {
+            if (this.individualsById[individualId].deathDay) {
+                delete this.individualsById[individualId];
             }
         }
-    }
-}
-
-export class Environment {
-    initialFood: number;
-    food: number;
-    initialShelter: number;
-    shelter: number;
-
-    bodies: Body[] = [];
-
-    minFoodFactor = 0.3;
-    maxFoodFactor = 0.7;
-
-    minShelterFactor = 0.1;
-    maxShelterFactor = 0.2;
-
-    constructor(state: State, bodies: Body[]) {
-        const foodFactor = this.minFoodFactor + Math.random() * (this.maxFoodFactor - this.minFoodFactor);
-        const shelterFactor = this.minShelterFactor + Math.random() * (this.maxShelterFactor - this.minShelterFactor);
-
-        this.initialFood = Math.round(foodFactor * State.targetIndividuals);
-        this.initialShelter = Math.round(shelterFactor * State.targetIndividuals);
-        const shelteredIndividuals = state.getIndividualsArray().filter(individual => individual.shelter).length;
-        this.initialShelter -= shelteredIndividuals;
-        if (this.initialShelter < 0) {
-            this.initialShelter = 0;
-        }
-
-        this.food = this.initialFood;
-        this.shelter = this.initialShelter;
-
-        this.bodies = bodies;
-    }
-
-    removeBody(bodyId: string) {
-        this.bodies = this.bodies.filter(body => body.id !== bodyId);
+        this.individuals = Object.values(this.individualsById);
     }
 }

@@ -1,50 +1,54 @@
-
-import { Diet, IndividualCategory } from "./enums.js";
-
-import { Strategy } from "./genetics/strategy.js";
-import { Traits } from "./genetics/traits.js";
+import { Brain } from "./genetics/brain.js";
+import { Diet } from "./genetics/diet.js";
 
 export class Individual {
     static maxEnergy = 4;
-    static adultAge = 2;
+    static reproductiveAge = 2;
 
-    id: string;
+    id: string = "";  // assigned by state
     birthday: number;
     parent: Individual | null;
     deathDay: number | null = null;
     eaten: boolean = false;
     starved: boolean = false;
 
-    strategy: Strategy;
-    traits: Traits;
-
-    lastEvent = "";
-
+    brain: Brain;
     diet: Diet;
 
-    energy = 2;
-    shelter = false;
+    events: string[] = [];
+
+    energy: number;
+
+    // TODO: calculate based on traits
+    // don't forget to recalculate when traits change
+    nutritionalValue = 2;
+    energyNeed = 1;
 
     children: Individual[] = [];
 
-    constructor(birthday: number, parent: Individual | null, traits: Traits, diet: Diet, strategy: Strategy) {
-        this.id = "";  // assigned by state
+    constructor(birthday: number, parent: Individual | null, brain: Brain, diet: Diet) {
         this.birthday = birthday;
 
         this.parent = parent;
 
-        this.strategy = strategy;
-
-        this.traits = traits;
-
+        this.brain = brain;
         this.diet = diet;
 
-        this.energy = 3;
+        this.energy = 2;
+    }
+
+    toString(): string {
+        return `${this.brain.toString()}-${this.diet.toString()}`;
+    }
+
+    toColor(): string {
+        return this.diet.toColor();
     }
 
     static random(birthday: number): Individual {
-        const randomDiet = Object.values(Diet)[Math.floor(Math.random() * Object.values(Diet).length)];
-        const newIndividual = new Individual(birthday, null, Traits.random(), randomDiet, Strategy.random(randomDiet));
+        const herbivore = Math.random() < 0.5;
+        const randomDiet = herbivore ? Diet.randomHerbivore() : Diet.randomCarnivore();
+        const newIndividual = new Individual(birthday, null, Brain.random(), randomDiet);
         return newIndividual;
     }
 
@@ -55,47 +59,23 @@ export class Individual {
         return today - this.birthday;
     }
 
-    getCategory(today: number): IndividualCategory {
-        if (this.starved) return IndividualCategory.Starved;
-        if (this.eaten) return IndividualCategory.Eaten;
-        if (this.getAge(today) < Individual.adultAge) return IndividualCategory.Young;
-        return IndividualCategory.Adult;
-    }
-
-    canBeHuntedBy(predator: Individual, today: number): boolean {
-        if (this.deathDay) {
-            return false;
-        }
-
-        if (this.shelter) {
-            return false;
-        }
-
-        // protected by parent at start of life
-        if (this.getAge(today) == 0) {
-            return false;
-        }
-
-        // only hunt if it will be succesful
-        return this.traits.canEscape(predator.traits);
-        // always hunt, but it will not always succeed
-        // return true;
-    }
-
     eat(nutritionalValue: number) {
         this.energy = Math.min(Individual.maxEnergy, this.energy + nutritionalValue);
     }
 
     createChild(today: number): Individual {
-        const evolvedStrategy = this.strategy.mutate();
-        const evolvedTraits = this.traits.mutate();
-        const baby = new Individual(today, this, evolvedTraits, this.diet, evolvedStrategy);
+        // const evolvedBrain = this.brain.mutatedCopy();
+        // const evolvedDiet = this.diet.mutatedCopy();
+
+        // no mutation for testing
+        const evolvedBrain = this.brain;
+        const evolvedDiet = this.diet;
+
+        const baby = new Individual(today, this, evolvedBrain, evolvedDiet);
         this.children.push(baby);
 
         return baby;
     }
-
-
 
     getOffspringCounts(): number[] {
         let offspring = [];
@@ -124,7 +104,7 @@ export class Individual {
         return this.getOffspringCounts().reduce((sum, val) => sum + val, 0);
     }
 
-    // returns the first parent and any living older parents, from old to new
+    // returns the first parent (dead or alive) and any living older parents, from old to new
     getParentIds(): string[] {
         const parents = [];
 
@@ -145,19 +125,38 @@ export class Individual {
         return parents.map(parent => parent.id);
     }
 
-    leaveShelter(): boolean {
-        if (this.shelter) {
-            this.shelter = false;
-            return true;
-        }
-        return false;
-    }
-
     hasHunger(): boolean {
         return this.energy <= Individual.maxEnergy - 1;
     }
 
-    die(today: number) {
+    dieEaten(today: number, eaterId: string) {
+        this.eaten = true;
+        this.events.push(`${eaterId} 🥩`);
+        this.die(today);
+    }
+
+    dieStarved(today: number) {
+        this.starved = true;
+        this.die(today);
+    }
+
+    private die(today: number) {
         this.deathDay = today;
+        // logEulogy(today);
+    }
+
+    private logEulogy(today: number) {
+        let eulogy = `${this.id} died at age ${this.getAge(today)}`;
+        if (this.eaten) {
+            eulogy += " (eaten)";
+        }
+        if (this.starved) {
+            eulogy += " (starved)";
+        }
+        const showLastEvents = 5;
+        for (let i = Math.max(5, this.events.length) - showLastEvents; i < this.events.length; i++) {
+            eulogy += `\n${i + 1} ${this.events[i]}`;
+        }
+        console.log(eulogy);
     }
 }

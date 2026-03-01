@@ -1,44 +1,48 @@
 import { Gene } from "./gene.js";
 
 export class Chromosome {
-    groups: string[][];
+
+    static geneKeys: string[] = [];
+    static geneLabels: string = "";
+
     genes: { [key: string]: Gene };
 
-    constructor(groups: string[][], genes: { [key: string]: Gene }) {
-        this.groups = groups;
+    constructor(genes: { [key: string]: Gene }) {
         this.genes = genes;
     }
 
     toString(): string {
-        return this.groups.map(group => group.map(key => this.genes[key].toString()).join("")).join("-");
+        return Object.keys(this.genes).map(key => this.genes[key].toString()).join("");
     }
 
-    static random(groups: string[][]): Chromosome {
-        const genes: { [key: string]: Gene } = {};
-        for (const group of groups) {
-            for (const key of group) {
-                genes[key] = Gene.random();
-            }
+    get(gene: string): number {
+        return this.genes[gene].value;
+    }
+
+    mutatedGenes(): { [key: string]: Gene } {
+        const newGenes: { [key: string]: Gene } = {};
+        for (const key of Object.keys(this.genes)) {
+            newGenes[key] = this.genes[key].mutate();
         }
-        return new Chromosome(groups, genes);
+
+        return newGenes;
     }
 
-    mutate(): Chromosome {
-        const newGenes = Object.entries(this.genes).map(([key, gene]) => {
-            return [key, gene.mutate()];
-        });
-        return new Chromosome(this.groups, Object.fromEntries(newGenes));
+    static randomGenes(keys: string[]): { [key: string]: Gene } {
+        const genes: { [key: string]: Gene } = {};
+        for (const key of keys) {
+            genes[key] = Gene.random();
+        }
+        return genes;
     }
 
-    static similar(chromosomeA: Chromosome, chromosomeB: Chromosome, margin: number): boolean {
-        for (const group of chromosomeA.groups) {
-            for (const key of group) {
-                const geneA = chromosomeA.genes[key];
-                const geneB = chromosomeB.genes[key];
-                // TODO: finetune this logic
-                if (Gene.difference(geneA, geneB) > margin) {
-                    return false;
-                }
+    static similar(chromosomeA: Chromosome, chromosomeB: Chromosome, stepsMargin: number): boolean {
+        for (const key of Object.keys(chromosomeA.genes)) {
+            const geneA = chromosomeA.genes[key];
+            const geneB = chromosomeB.genes[key];
+            // TODO: finetune this logic
+            if (Gene.difference(geneA, geneB) > stepsMargin) {
+                return false;
             }
         }
         return true;
