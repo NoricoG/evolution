@@ -18,8 +18,8 @@ export class Gene {
         // exactly 0
         if (this.value == 0) return "x";
 
-        // map value from 0-1 to 0-9
-        const bucket = Math.ceil(this.value * 10) - 1;
+        // map 0.00_001 to 1 and map 1 to 9
+        const bucket = Math.ceil(this.value * 9);
         return bucket.toString();
     }
 

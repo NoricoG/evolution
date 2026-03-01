@@ -127,37 +127,35 @@
       console.warn("No action chosen, this should not happen");
       return null;
     }
-    mutatedCopy() {
-      return new _Brain(this.mutatedGenes());
+    debugMutate() {
+      var mutated = this.mutatedGenes();
+      for (const key of _Brain.geneKeys) {
+        if (this.genes[key].value === 0) {
+          mutated[key] = new Gene(0);
+        }
+      }
+      return new _Brain(mutated);
     }
     static random() {
       return new _Brain(Chromosome.randomGenes(_Brain.geneKeys));
     }
     static debugHerbivore() {
       return new _Brain({
-        ["GatherAction" /* GatherAction */]: new Gene(1),
+        ["GatherAction" /* GatherAction */]: new Gene(0.5),
         ["HuntAction" /* HuntAction */]: new Gene(0),
-        ["ReproduceAction" /* ReproduceAction */]: new Gene(1)
+        ["ReproduceAction" /* ReproduceAction */]: new Gene(0.5)
       });
     }
     static debugCarnivore() {
       return new _Brain({
         ["GatherAction" /* GatherAction */]: new Gene(0),
-        ["HuntAction" /* HuntAction */]: new Gene(1),
-        ["ReproduceAction" /* ReproduceAction */]: new Gene(1)
+        ["HuntAction" /* HuntAction */]: new Gene(0.5),
+        ["ReproduceAction" /* ReproduceAction */]: new Gene(0.5)
       });
     }
   };
 
   // src/genetics/diet.ts
-  function hslToRgb(h, s, l) {
-    const a = s * Math.min(l, 1 - l);
-    const f = (n) => {
-      const k = (n + h * 12) % 12;
-      return l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1));
-    };
-    return [Math.round(f(0) * 255), Math.round(f(8) * 255), Math.round(f(4) * 255)];
-  }
   var DietGenes = /* @__PURE__ */ ((DietGenes2) => {
     DietGenes2["Herbivore"] = "Herbivore";
     DietGenes2["Scavenger"] = "Scavenger";
@@ -185,16 +183,6 @@
         newGenes[key] = this.genes[key].mutate();
       }
       return new _Diet(newGenes);
-    }
-    toColor() {
-      const herbivoreValue = this.genes["Herbivore" /* Herbivore */].value;
-      const carnivoreValue = this.genes["Carnivore" /* Carnivore */].value;
-      const mostlyHerbivore = herbivoreValue > carnivoreValue;
-      const hue = mostlyHerbivore ? 120 : 0;
-      const saturation = 0.75;
-      const lightness = 0.5;
-      const [r, g, b] = hslToRgb(hue / 360, saturation, lightness);
-      return `rgb(${r}, ${g}, ${b})`;
     }
     mostlyHerbivore() {
       const herbivoreValue = this.genes["Herbivore" /* Herbivore */].value;
@@ -225,9 +213,29 @@
     }
   };
 
+  // src/utils/color.ts
+  function hslToRgb(h, s, l) {
+    const a = s * Math.min(l, 1 - l);
+    const f = (n) => {
+      const k = (n + h * 12) % 12;
+      return l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1));
+    };
+    return [Math.round(f(0) * 255), Math.round(f(8) * 255), Math.round(f(4) * 255)];
+  }
+  function dietToColor(diet) {
+    const herbivoreValue = diet.genes["Herbivore" /* Herbivore */].value;
+    const carnivoreValue = diet.genes["Carnivore" /* Carnivore */].value;
+    const mostlyHerbivore = herbivoreValue > carnivoreValue;
+    const hue = mostlyHerbivore ? 120 : 0;
+    const saturation = 0.75;
+    const lightness = 0.5;
+    const [r, g, b] = hslToRgb(hue / 360, saturation, lightness);
+    return `rgb(${r}, ${g}, ${b})`;
+  }
+
   // src/individual.ts
   var Individual = class _Individual {
-    static maxEnergy = 4;
+    static maxEnergy = 5;
     static reproductiveAge = 2;
     id = "";
     // assigned by state
@@ -256,7 +264,7 @@
       return `${this.brain.toString()}-${this.diet.toString()}`;
     }
     toColor() {
-      return this.diet.toColor();
+      return dietToColor(this.diet);
     }
     static random(birthday) {
       const herbivore = Math.random() < 0.5;
@@ -274,7 +282,7 @@
       this.energy = Math.min(_Individual.maxEnergy, this.energy + nutritionalValue);
     }
     createChild(today) {
-      const evolvedBrain = this.brain;
+      const evolvedBrain = this.brain.debugMutate();
       const evolvedDiet = this.diet;
       const baby = new _Individual(today, this, evolvedBrain, evolvedDiet);
       this.children.push(baby);
@@ -356,6 +364,17 @@ ${i + 1} ${this.events[i]}`;
       this.individual = individual;
     }
   };
+  var WaitAction = class extends Action {
+    isPossible(state) {
+      return true;
+    }
+    execute(state) {
+      return -this.individual.energyNeed;
+    }
+    toString() {
+      return `\u{1F4A4}`;
+    }
+  };
   var GatherAction = class extends Action {
     isPossible(state) {
       const hungry = this.individual.hasHunger();
@@ -363,10 +382,11 @@ ${i + 1} ${this.events[i]}`;
       const mostlyHerbivore = this.individual.diet.mostlyHerbivore();
       return hungry && foodAvailable && mostlyHerbivore;
     }
+    // +0.5 turn
     execute(state) {
       this.individual.eat(1.5);
       state.environment.remainingFood--;
-      return 0.5;
+      return 1.5 - this.individual.energyNeed;
     }
     toString() {
       return `\u{1F955}`;
@@ -397,30 +417,30 @@ ${i + 1} ${this.events[i]}`;
       }
       return true;
     }
+    // +1 turn if successful, -1 turn if not
     execute(state) {
-      const energyCost = 1;
       const possibleVictims = state.individuals.filter((v) => this.isPossibleVictim(v));
       if (possibleVictims.length === 0) {
         console.log(`${this.individual.id} hunts but there are no possible victims`);
-        return energyCost;
+        return -this.individual.energyNeed;
       }
       const victimConcentration = possibleVictims.length / state.environment.maxFood;
       const victimConcentrationLuck = Math.random();
       if (victimConcentrationLuck < victimConcentration) {
         this.victim = possibleVictims[Math.floor(Math.random() * possibleVictims.length)];
       } else {
-        return energyCost;
+        return -this.individual.energyNeed;
       }
       const victimRatio = possibleVictims.length / state.individuals.length;
       const victimRatioLuck = Math.random();
       if (victimRatioLuck < victimRatio) {
         this.victim = possibleVictims[Math.floor(Math.random() * possibleVictims.length)];
       } else {
-        return energyCost;
+        return -this.individual.energyNeed;
       }
       this.individual.eat(this.victim.nutritionalValue);
       this.victim.dieEaten(state.day, this.individual.id);
-      return energyCost;
+      return this.victim.nutritionalValue - this.individual.energyNeed;
     }
     toString() {
       let victimId = this.victim ? this.victim.id : "\u274C";
@@ -431,9 +451,10 @@ ${i + 1} ${this.events[i]}`;
     cloneIds = [];
     isPossible(state) {
       const isAdult = this.individual.getAge(state.day) >= Individual.reproductiveAge;
-      const hasEnergy = this.individual.energy >= 2;
+      const hasEnergy = this.individual.energy > 2;
       return isAdult && hasEnergy;
     }
+    // -2 for 1 child, -3 for 2 children
     execute(state) {
       const spendableEnergy = Math.floor(this.individual.energy);
       const numberOfChildren = Math.min(2, spendableEnergy);
@@ -442,13 +463,13 @@ ${i + 1} ${this.events[i]}`;
         state.saveIndividual(baby);
         this.cloneIds.push(baby.id);
       }
-      return numberOfChildren;
+      return -numberOfChildren - this.individual.energyNeed;
     }
     toString() {
       return `\u{1F476} ${this.cloneIds.join(" ")}`;
     }
   };
-  var allActions = [
+  var voluntaryActions = [
     GatherAction,
     HuntAction,
     ReproduceAction
@@ -508,20 +529,15 @@ ${i + 1} ${this.events[i]}`;
         return;
       }
       const possibleActions = [];
-      for (const ActionClass of allActions) {
+      for (const ActionClass of voluntaryActions) {
         const action2 = new ActionClass(individual);
         if (action2.isPossible(this.state)) {
           possibleActions.push(action2);
         }
       }
-      let action = individual.brain.decide(possibleActions);
-      if (action) {
-        action.execute(this.state);
-        individual.events.push(action.toString());
-      } else {
-        individual.events.push("x");
-      }
-      individual.energy -= individual.energyNeed;
+      let action = individual.brain.decide(possibleActions) || new WaitAction(individual);
+      individual.energy += action.execute(this.state);
+      individual.events.push(action.toString());
     }
     starveIndividuals() {
       let starvedIndividuals = 0;
@@ -556,6 +572,19 @@ ${i + 1} ${this.events[i]}`;
       this.remainingFood = this.grownFood;
     }
   };
+
+  // src/utils/name.ts
+  function intToName(num) {
+    const consonants = "bcdfghjklmnpqrstvwxyz";
+    const vowels = "aeiou";
+    const c = consonants.length;
+    const v = vowels.length;
+    const firstIdx = num % c;
+    const vowelIdx = Math.floor(num / c) % v;
+    const lastIdx = Math.floor(num / (c * v)) % c;
+    const name = consonants[firstIdx].toUpperCase() + vowels[vowelIdx] + consonants[lastIdx];
+    return name;
+  }
 
   // src/state.ts
   var State = class {
@@ -593,18 +622,7 @@ ${i + 1} ${this.events[i]}`;
     }
     nextIndividualId() {
       this.individualIdCounter++;
-      function translate(num) {
-        const consonants = "bcdfghjklmnpqrstvwxyz";
-        const vowels = "aeiou";
-        const c = consonants.length;
-        const v = vowels.length;
-        const firstIdx = num % c;
-        const vowelIdx = Math.floor(num / c) % v;
-        const lastIdx = Math.floor(num / (c * v)) % c;
-        const name = consonants[firstIdx].toUpperCase() + vowels[vowelIdx] + consonants[lastIdx];
-        return name;
-      }
-      return translate(this.individualIdCounter);
+      return intToName(this.individualIdCounter);
     }
     saveIndividual(individual) {
       individual.id = this.nextIndividualId();
@@ -624,6 +642,24 @@ ${i + 1} ${this.events[i]}`;
         }
       }
       this.individuals = Object.values(this.individualsById);
+      for (let individual of this.individuals) {
+        var parent = individual.parent;
+        var deadInARow = 0;
+        while (parent && deadInARow < 2) {
+          if (parent.deathDay) {
+            deadInARow++;
+          } else {
+            deadInARow = 0;
+          }
+          parent = parent.parent;
+        }
+        var nextParent = parent;
+        while (nextParent) {
+          const nextNextParent = nextParent.parent;
+          nextParent.parent = null;
+          nextParent = nextNextParent;
+        }
+      }
     }
   };
 
@@ -675,6 +711,7 @@ ${i + 1} ${this.events[i]}`;
       this.updateTitles();
       this.showEnvironment();
       new IndividualsDetails(this.state.individuals, this.state.day).showIndividuals();
+      this.logStuff();
     }
     updateTitles() {
       document.getElementById("iteration-title").innerText = `Iteration ${this.state.day}`;
@@ -686,6 +723,13 @@ ${i + 1} ${this.events[i]}`;
       const food = document.createElement("p");
       food.innerText = this.state.environment.toFoodString();
       environmentDiv.appendChild(food);
+    }
+    logStuff() {
+      const herbivores = this.state.individuals.filter((individual) => individual.diet.mostlyHerbivore()).length;
+      const carnivores = this.state.individuals.filter((individual) => individual.diet.mostlyCarnivore()).length;
+      const eaten = this.state.individuals.filter((individual) => individual.eaten).length;
+      const starved = this.state.individuals.filter((individual) => individual.starved).length;
+      console.log(`Day ${this.state.day}: \u{1F955}${herbivores} \u{1F969}${carnivores}, \u{1F969}${eaten} \u{1F37D}\uFE0F${starved}`);
     }
   };
   var IndividualsDetails = class {

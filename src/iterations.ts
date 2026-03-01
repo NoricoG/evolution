@@ -1,4 +1,4 @@
-import { Action, allActions, ReproduceAction } from "./action.js";
+import { Action, voluntaryActions, ReproduceAction, WaitAction } from "./action.js";
 import { Individual } from "./individual.js";
 import { State } from "./state.js";
 
@@ -75,22 +75,16 @@ export class Iterations {
 
         const possibleActions: Action[] = [];
 
-        for (const ActionClass of allActions) {
+        for (const ActionClass of voluntaryActions) {
             const action = new ActionClass(individual);
             if (action.isPossible(this.state)) {
                 possibleActions.push(action);
             }
         }
 
-        let action = individual.brain.decide(possibleActions);
-        if (action) {
-            action.execute(this.state);
-            individual.events.push(action.toString());
-        } else {
-            individual.events.push("x");
-        }
-
-        individual.energy -= individual.energyNeed;
+        let action = individual.brain.decide(possibleActions) || new WaitAction(individual);
+        individual.energy += action.execute(this.state);
+        individual.events.push(action.toString());
     }
 
     starveIndividuals() {

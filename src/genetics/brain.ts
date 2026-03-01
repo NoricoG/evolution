@@ -50,8 +50,14 @@ export class Brain extends Chromosome {
         return null;
     }
 
-    mutatedCopy(): Brain {
-        return new Brain(this.mutatedGenes());
+    debugMutate(): Brain {
+        var mutated = this.mutatedGenes();
+        for (const key of Brain.geneKeys) {
+            if (this.genes[key].value === 0) {
+                mutated[key] = new Gene(0);
+            }
+        }
+        return new Brain(mutated);
     }
 
     static random(): Brain {
@@ -60,17 +66,17 @@ export class Brain extends Chromosome {
 
     static debugHerbivore(): Brain {
         return new Brain({
-            [BrainGenes.GatherAction]: new Gene(1),
+            [BrainGenes.GatherAction]: new Gene(0.5),
             [BrainGenes.HuntAction]: new Gene(0),
-            [BrainGenes.ReproduceAction]: new Gene(1),
+            [BrainGenes.ReproduceAction]: new Gene(0.5),
         });
     }
 
     static debugCarnivore(): Brain {
         return new Brain({
             [BrainGenes.GatherAction]: new Gene(0),
-            [BrainGenes.HuntAction]: new Gene(1),
-            [BrainGenes.ReproduceAction]: new Gene(1),
+            [BrainGenes.HuntAction]: new Gene(0.5),
+            [BrainGenes.ReproduceAction]: new Gene(0.5),
         });
     }
 }

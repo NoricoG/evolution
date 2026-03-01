@@ -1,8 +1,10 @@
 import { Brain } from "./genetics/brain.js";
 import { Diet } from "./genetics/diet.js";
 
+import { dietToColor } from "./utils/color.js";
+
 export class Individual {
-    static maxEnergy = 4;
+    static maxEnergy = 5;
     static reproductiveAge = 2;
 
     id: string = "";  // assigned by state
@@ -42,7 +44,7 @@ export class Individual {
     }
 
     toColor(): string {
-        return this.diet.toColor();
+        return dietToColor(this.diet);
     }
 
     static random(birthday: number): Individual {
@@ -68,7 +70,7 @@ export class Individual {
         // const evolvedDiet = this.diet.mutatedCopy();
 
         // no mutation for testing
-        const evolvedBrain = this.brain;
+        const evolvedBrain = this.brain.debugMutate();
         const evolvedDiet = this.diet;
 
         const baby = new Individual(today, this, evolvedBrain, evolvedDiet);

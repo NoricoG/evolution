@@ -64,6 +64,8 @@ class UI {
         this.updateTitles();
         this.showEnvironment();
         new IndividualsDetails(this.state.individuals, this.state.day).showIndividuals();
+
+        this.logStats();
     }
 
     private updateTitles() {
@@ -78,6 +80,14 @@ class UI {
         const food = document.createElement("p");
         food.innerText = this.state.environment.toFoodString();
         environmentDiv.appendChild(food);
+    }
+
+    private logStats() {
+        const herbivores = this.state.individuals.filter(individual => individual.diet.mostlyHerbivore()).length;
+        const carnivores = this.state.individuals.filter(individual => individual.diet.mostlyCarnivore()).length;
+        const eaten = this.state.individuals.filter(individual => individual.eaten).length;
+        const starved = this.state.individuals.filter(individual => individual.starved).length;
+        console.log(`Day ${this.state.day}: 🥕${herbivores} 🥩${carnivores}, 🥩${eaten} 🍽️${starved}`);
     }
 }
 
