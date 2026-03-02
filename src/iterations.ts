@@ -1,25 +1,14 @@
-import { Action, voluntaryActions, ReproduceAction, WaitAction } from "./action.js";
+import { MainAction } from "./actions/decide.js";
+import { Energy } from "./energy.js";
 import { Individual } from "./individual.js";
 import { State } from "./state.js";
 
 export class Iterations {
 
-    state: State;
+    readonly state: State;
 
     constructor(state: State) {
         this.state = state;
-    }
-
-    playInterval: ReturnType<typeof setInterval> | undefined = undefined;
-
-    play(fast: boolean) {
-        const wait = fast ? 500 : 1000;
-        this.playInterval = setInterval(() => this.execute(1), wait);
-    }
-
-    pause() {
-        clearInterval(this.playInterval);
-        this.playInterval = undefined;
     }
 
     execute(iterations: number) {
@@ -27,30 +16,20 @@ export class Iterations {
             this.state.archiveDeadIndividuals();
             this.state.day++;
 
-            // this.addIndividuals();
-
             this.state.updateEnvironment();
 
             this.actAllIndividuals();
             this.starveIndividuals();
 
+            this.state.metrics.addDayMetrics(this.state);
+
             if (this.state.individuals.filter(individual => !individual.deathDay).length == 0) {
-                alert("All individuals have died.");
+                alert("All individuals have died. Reload the page for a new simulation.");
             }
         }
     }
 
-    addIndividuals() {
-        const minimalIndividuals = 5;
-        const maxMigratingIndividuals = Math.max(0, minimalIndividuals - this.state.individuals.length);
-        const migratingIndividuals = Math.random() * maxMigratingIndividuals;
-
-        for (let i = 0; i < migratingIndividuals; i++) {
-            this.state.saveIndividual(Individual.random(this.state.day));
-        }
-    }
-
-    actAllIndividuals() {
+    private actAllIndividuals() {
         // shuffle individuals
         const individuals = this.state.individuals;
         for (let i = individuals.length - 1; i > 0; i--) {
@@ -59,35 +38,19 @@ export class Iterations {
         }
 
         for (const individual of individuals) {
-            this.actIndividual(individual);
-        }
-    }
+            const mainAction = new MainAction(individual);
+            if (mainAction.isPossible(this.state)) {
+                const gainedEnergy = mainAction.execute(this.state);
 
-    actIndividual(individual: Individual) {
-        if (individual.deathDay) {
-            return;
-        }
-
-        if (individual.getAge(this.state.day) == 0) {
-            individual.events.push("📈");
-            return;
-        }
-
-        const possibleActions: Action[] = [];
-
-        for (const ActionClass of voluntaryActions) {
-            const action = new ActionClass(individual);
-            if (action.isPossible(this.state)) {
-                possibleActions.push(action);
+                individual.energy += gainedEnergy;
+                if (individual.energy > Energy.max) {
+                    individual.energy = Energy.max;
+                }
             }
         }
-
-        let action = individual.brain.decide(possibleActions) || new WaitAction(individual);
-        individual.energy += action.execute(this.state);
-        individual.events.push(action.toString());
     }
 
-    starveIndividuals() {
+    private starveIndividuals() {
         let starvedIndividuals = 0;
 
         for (let individual of this.state.individuals) {

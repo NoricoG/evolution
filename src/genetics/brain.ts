@@ -1,82 +1,26 @@
-import { Action } from "../action.js";
+import { Action } from "../actions/action.js";
 import { Individual } from "../individual.js";
 
 import { Chromosome } from "./chromosome.js";
 import { Gene } from "./gene.js";
 
 export enum BrainGenes {
-    GatherAction = "GatherAction",
-    HuntAction = "HuntAction",
-    // ScavengeAction = "ScavengeAction",
-    ReproduceAction = "ReproduceAction",
+    Eat = "Eat",
+    Reproduce = "Reproduce",
 }
 
 export class Brain extends Chromosome {
 
-    static geneKeys = Object.values(BrainGenes);
-    // static geneLabels = "🥕🍖🥩👶";
-    static geneLabels = "🥕🥩👶";
+    static readonly geneKeys = Object.values(BrainGenes);
+    static readonly geneLabels = "😋👶";
 
-    decide(actions: Action[]): Action | null {
-        if (actions.length === 0) {
-            return null;
-        }
+    readonly makeRelative = true;
 
-        const weightedActions = actions.map(action => {
-            const weight = this.genes[action.constructor.name] || { value: 1 };
-            return { action, weight };
-        });
-
-        // pick a random weight of the total weight range
-        const totalWeight = weightedActions.reduce((sum, aw) => sum + aw.weight.value!, 0);
-        const randomWeight = Math.random() * totalWeight;
-
-        if (totalWeight === 0) {
-            const actionsString = actions.map(a => a.constructor.name).join(" ");
-            console.info(`This individual can do ${actionsString} but brain is ${this.toString()} so it does nothing`);
-            return null
-        }
-
-        // find the action corresponding to the random weight
-        let cumulativeWeight = 0;
-        for (const aw of weightedActions) {
-            cumulativeWeight += aw.weight.value;
-            if (cumulativeWeight > randomWeight) {
-                return aw.action;
-            }
-        }
-
-        console.warn("No action chosen, this should not happen");
-        return null;
-    }
-
-    debugMutate(): Brain {
-        var mutated = this.mutatedGenes();
+    static neutral(): Brain {
+        const neutralGenes: Record<string, Gene> = {};
         for (const key of Brain.geneKeys) {
-            if (this.genes[key].value === 0) {
-                mutated[key] = new Gene(0);
-            }
+            neutralGenes[key] = new Gene(0.5);
         }
-        return new Brain(mutated);
-    }
-
-    static random(): Brain {
-        return new Brain(Chromosome.randomGenes(Brain.geneKeys));
-    }
-
-    static debugHerbivore(): Brain {
-        return new Brain({
-            [BrainGenes.GatherAction]: new Gene(0.5),
-            [BrainGenes.HuntAction]: new Gene(0),
-            [BrainGenes.ReproduceAction]: new Gene(0.5),
-        });
-    }
-
-    static debugCarnivore(): Brain {
-        return new Brain({
-            [BrainGenes.GatherAction]: new Gene(0),
-            [BrainGenes.HuntAction]: new Gene(0.5),
-            [BrainGenes.ReproduceAction]: new Gene(0.5),
-        });
+        return new Brain(neutralGenes);
     }
 }

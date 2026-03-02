@@ -2,12 +2,16 @@ import { Gene } from "./gene.js";
 
 export class Chromosome {
 
-    static geneKeys: string[] = [];
-    static geneLabels: string = "";
+    static readonly geneKeys: string[] = [];
+    static readonly geneLabels: string = "";
 
-    genes: { [key: string]: Gene };
+    readonly genes: { [key: string]: Gene };
+    readonly makeRelative = true;
 
     constructor(genes: { [key: string]: Gene }) {
+        if (this.makeRelative) {
+            genes = Chromosome.makeRelative(genes);
+        }
         this.genes = genes;
     }
 
@@ -19,21 +23,25 @@ export class Chromosome {
         return this.genes[gene].value;
     }
 
-    mutatedGenes(): { [key: string]: Gene } {
+    mutatedCopy(): this {
         const newGenes: { [key: string]: Gene } = {};
         for (const key of Object.keys(this.genes)) {
-            newGenes[key] = this.genes[key].mutate();
+            newGenes[key] = this.genes[key].mutated();
         }
-
-        return newGenes;
+        return new (this.constructor as new (genes: { [key: string]: Gene }) => this)(newGenes);
     }
 
-    static randomGenes(keys: string[]): { [key: string]: Gene } {
-        const genes: { [key: string]: Gene } = {};
-        for (const key of keys) {
-            genes[key] = Gene.random();
+    static makeRelative(genes: { [key: string]: Gene }): { [key: string]: Gene } {
+        const total = Object.values(genes).reduce((sum, gene) => sum + gene.value, 0);
+        if (total === 0) {
+            return genes;
         }
-        return genes;
+
+        const relativeGenes: { [key: string]: Gene } = {};
+        for (const key of Object.keys(genes)) {
+            relativeGenes[key] = new Gene(genes[key].value / total);
+        }
+        return relativeGenes;
     }
 
     static similar(chromosomeA: Chromosome, chromosomeB: Chromosome, stepsMargin: number): boolean {

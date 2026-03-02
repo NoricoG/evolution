@@ -1,30 +1,25 @@
 import { Brain } from "./genetics/brain.js";
 import { Diet } from "./genetics/diet.js";
 
-import { dietToColor } from "./utils/color.js";
+import { genomeToColor } from "./utils/color.js";
+import { Energy } from "./energy.js";
 
 export class Individual {
-    static maxEnergy = 5;
-    static reproductiveAge = 2;
+    static readonly reproductiveAge = 2;
 
     id: string = "";  // assigned by state
-    birthday: number;
+    readonly birthday: number;
     parent: Individual | null;
     deathDay: number | null = null;
     eaten: boolean = false;
     starved: boolean = false;
 
-    brain: Brain;
-    diet: Diet;
+    readonly brain: Brain;
+    readonly diet: Diet;
 
     events: string[] = [];
 
     energy: number;
-
-    // TODO: calculate based on traits
-    // don't forget to recalculate when traits change
-    nutritionalValue = 2;
-    energyNeed = 1;
 
     children: Individual[] = [];
 
@@ -36,7 +31,7 @@ export class Individual {
         this.brain = brain;
         this.diet = diet;
 
-        this.energy = 2;
+        this.energy = Energy.whenBorn;
     }
 
     toString(): string {
@@ -44,14 +39,7 @@ export class Individual {
     }
 
     toColor(): string {
-        return dietToColor(this.diet);
-    }
-
-    static random(birthday: number): Individual {
-        const herbivore = Math.random() < 0.5;
-        const randomDiet = herbivore ? Diet.randomHerbivore() : Diet.randomCarnivore();
-        const newIndividual = new Individual(birthday, null, Brain.random(), randomDiet);
-        return newIndividual;
+        return genomeToColor(this.diet, this.brain);
     }
 
     getAge(today: number): number {
@@ -61,17 +49,9 @@ export class Individual {
         return today - this.birthday;
     }
 
-    eat(nutritionalValue: number) {
-        this.energy = Math.min(Individual.maxEnergy, this.energy + nutritionalValue);
-    }
-
     createChild(today: number): Individual {
-        // const evolvedBrain = this.brain.mutatedCopy();
-        // const evolvedDiet = this.diet.mutatedCopy();
-
-        // no mutation for testing
-        const evolvedBrain = this.brain.debugMutate();
-        const evolvedDiet = this.diet;
+        const evolvedBrain = this.brain.mutatedCopy();
+        const evolvedDiet = this.diet.mutatedCopy();
 
         const baby = new Individual(today, this, evolvedBrain, evolvedDiet);
         this.children.push(baby);
@@ -79,7 +59,7 @@ export class Individual {
         return baby;
     }
 
-    getOffspringCounts(): number[] {
+    getOffspringCounts(includeDead: boolean): number[] {
         let offspring = [];
         let generation = 1;
         offspring.push(this.children);
@@ -95,19 +75,19 @@ export class Individual {
         // remove last generation which is empty
         offspring.pop();
 
-        const offSpringCounts = offspring.map(generation => generation.filter(individual => !individual.deathDay).length);
+        const offSpringCounts = offspring.map(generation => generation.filter(individual => includeDead || !individual.deathDay).length);
         if (offSpringCounts[offSpringCounts.length - 1] == 0) {
             offSpringCounts.pop();
         }
         return offSpringCounts;
     }
 
-    getOffspringSum(): number {
-        return this.getOffspringCounts().reduce((sum, val) => sum + val, 0);
+    getOffspringSum(includeDead: boolean = false): number {
+        return this.getOffspringCounts(includeDead).reduce((sum, val) => sum + val, 0);
     }
 
-    // returns the first parent (dead or alive) and any living older parents, from old to new
-    getParentIds(): string[] {
+    // returns any living parents and the first died parent, from young to old
+    getParents(): Individual[] {
         const parents = [];
 
         if (this.parent) {
@@ -116,19 +96,24 @@ export class Individual {
             let alive = true;
             while (alive) {
                 const nextParent: Individual = parents[parents.length - 1].parent!;
-                alive = nextParent != null && !nextParent.deathDay;
-                if (alive) {
-                    parents.push(nextParent);
+
+                // stop when there is no more parent
+                if (nextParent == null) {
+                    break;
                 }
+                // stop when the next parent is dead, but include it in the list
+                if (nextParent.deathDay) {
+                    parents.push(nextParent);
+                    break;
+                }
+                parents.push(nextParent);
             }
-
-
         }
-        return parents.map(parent => parent.id);
+        return parents;
     }
 
     hasHunger(): boolean {
-        return this.energy <= Individual.maxEnergy - 1;
+        return this.energy <= Energy.max - 1;
     }
 
     dieEaten(today: number, eaterId: string) {

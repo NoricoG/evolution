@@ -8,8 +8,8 @@ export enum TraitGenes {
 
 // currently not used
 export class Traits extends Chromosome {
-    static geneKeys = Object.values(TraitGenes);
-    static geneLabels = "💪🏃‍♂️🤸🏼‍♂️";
+    static readonly geneKeys = Object.values(TraitGenes);
+    static readonly geneLabels = "💪🏃‍♂️🤸🏼‍♂️";
 
     canEscape(predator: Traits): boolean {
         for (const trait of Traits.geneKeys) {

@@ -3,7 +3,7 @@ export class Environment {
     grownFood: number;
     remainingFood: number;
 
-    maxFood: number;
+    readonly maxFood: number;
 
     constructor(maxFood: number) {
         this.maxFood = maxFood;
@@ -22,8 +22,8 @@ export class Environment {
         // remaining food from yesterday becomes uneaten food today
         this.uneatenFood = this.remainingFood;
 
-        // grow to midway between leftover and max
-        this.grownFood = Math.round((this.uneatenFood + this.maxFood) / 2);
+        const possibleGrowth = this.maxFood - this.uneatenFood;
+        this.grownFood = Math.round(this.uneatenFood + possibleGrowth / 2);
 
         this.remainingFood = this.grownFood;
     }

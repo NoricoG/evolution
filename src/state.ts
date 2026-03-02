@@ -5,6 +5,7 @@ import { Brain } from "./genetics/brain.js";
 import { Diet } from "./genetics/diet.js";
 
 import { intToName } from "./utils/name.js"
+import { SimulationMetrics } from "./metrics.js";
 
 
 export class State {
@@ -16,43 +17,33 @@ export class State {
 
     individualIdCounter = -1;
 
-    environment: Environment;
+    readonly environment: Environment;
+
+    readonly metrics: SimulationMetrics = new SimulationMetrics();
 
     constructor() {
 
         this.day = 0;
 
-        this.createInitialIndividuals();
-
         this.environment = new Environment(50);
+
+        this.createInitialIndividuals();
     }
 
     private createInitialIndividuals() {
         const firstIndividuals = [
-            new Individual(this.day, null, Brain.debugHerbivore(), Diet.randomHerbivore()),
-            new Individual(this.day, null, Brain.debugHerbivore(), Diet.randomHerbivore()),
-            new Individual(this.day, null, Brain.debugCarnivore(), Diet.randomCarnivore())
+            new Individual(this.day, null, Brain.neutral(), Diet.neutral()),
+            new Individual(this.day, null, Brain.neutral(), Diet.neutral()),
         ];
 
         for (const individual of firstIndividuals) {
             this.saveIndividual(individual);
         }
 
-        const growingDays = 3;
-        const newChildren = [];
-        for (let i = 0; i < growingDays; i++) {
-            this.day++;
-            for (const individual of this.individuals) {
-                const child = individual.createChild(this.day);
-                newChildren.push(child);
-            }
-        }
-        for (const child of newChildren) {
-            this.saveIndividual(child);
-        }
+        this.metrics.addDayMetrics(this);
     }
 
-    nextIndividualId(): string {
+    private nextIndividualId(): string {
         this.individualIdCounter++;
         return intToName(this.individualIdCounter);
     }

@@ -1,8 +1,8 @@
 // currently not used
 export class Body {
-    id: string
-    nutrionalValue: number;
-    deathDay: number;
+    readonly id: string
+    readonly nutrionalValue: number;
+    readonly deathDay: number;
 
     constructor(id: string, nutrionalValue: number, deathDay: number) {
         this.id = id;

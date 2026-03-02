@@ -17,7 +17,7 @@ table {
 }
 
 th {
-    text-align: center;
+    text-align: left;
     background-color: #ababab;
     padding: 8px;
     font-weight: 600;
@@ -25,7 +25,7 @@ th {
 
 td {
     padding: 8px;
-    text-align: center;
+    text-align: left;
 }
 
 .individuals-columns {
