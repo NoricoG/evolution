@@ -1,72 +1,203 @@
+import { Environment } from "./environment";
 import { Individual } from "./individual";
 import { State } from "./state";
 
 import { Chromosome } from "./genetics/chromosome";
+
 
 export class SimulationMetrics {
     dayMetrics: DayMetrics[] = [];
 
     addDayMetrics(state: State) {
         this.dayMetrics.push(new DayMetrics(state));
+        if (this.dayMetrics.length > 1000) {
+            this.dayMetrics.shift();
+        }
     }
 }
 
 export class DayMetrics {
     readonly day: number;
-
-    readonly bornIndividuals: number;
-    readonly aliveIndividuals: number;
-    readonly deadIndividuals: number;
-    readonly eatenIndividuals: number;
-    readonly starvedIndividuals: number;
-
-    readonly brainMetrics: ChromosomeMetrics;
-    readonly dietMetrics: ChromosomeMetrics;
-
-    readonly uneatenFood: number;
-    readonly grownFood: number;
-    readonly remainingFood: number;
+    readonly population: PopulationMetrics;
+    readonly eatenStarved: EatenStarvedMetrics;
+    readonly food: FoodMetrics;
+    readonly age: AgeMetrics;
+    readonly offspring: OffspringMetrics;
+    readonly genetics: GeneticsMetrics;
+    readonly dietDistribution: DietDistributionMetrics;
 
     constructor(state: State) {
+        const living = state.individuals.filter(i => !i.deathDay);
+        const dead = state.individuals.filter(i => i.deathDay);
+
         this.day = state.day;
-
-        this.bornIndividuals = state.individuals.filter(individual => individual.birthday === state.day).length;
-        this.aliveIndividuals = state.individuals.filter(individual => !individual.deathDay).length;
-        this.deadIndividuals = state.individuals.filter(individual => individual.deathDay).length;
-        this.eatenIndividuals = state.individuals.filter(individual => individual.eaten).length;
-        this.starvedIndividuals = state.individuals.filter(individual => individual.starved).length;
-
-        this.brainMetrics = new ChromosomeMetrics(state.individuals.map(individual => individual.brain));
-        this.dietMetrics = new ChromosomeMetrics(state.individuals.map(individual => individual.diet));
-
-        this.uneatenFood = state.environment.uneatenFood;
-        this.grownFood = state.environment.grownFood;
-        this.remainingFood = state.environment.remainingFood;
+        this.population = new PopulationMetrics(state.day, state.individuals, living, dead);
+        this.eatenStarved = new EatenStarvedMetrics(dead);
+        this.food = new FoodMetrics(state.environment);
+        this.age = new AgeMetrics(state.day, living, dead);
+        this.offspring = new OffspringMetrics(living);
+        this.genetics = new GeneticsMetrics(state);
+        this.dietDistribution = new DietDistributionMetrics(living);
     }
 }
 
-export class ChromosomeMetrics {
-    readonly geneKeys: string;
-    readonly geneCounts: { [geneKey: string]: { [bucket: number]: number } } = {};
+export class PopulationMetrics {
+    readonly alive: number;
+    readonly born: number;
+    readonly dead: number;
 
-    constructor(chromosomes: Chromosome[]) {
-        this.geneKeys = Chromosome.geneLabels;
+    constructor(day: number, all: Individual[], living: Individual[], dead: Individual[]) {
+        this.alive = living.length;
+        this.born = all.filter(i => i.birthday === day).length;
+        this.dead = dead.length;
+    }
+}
 
-        if (chromosomes.length === 0) {
+export class EatenStarvedMetrics {
+    readonly eaten: number;
+    readonly starved: number;
+
+    readonly eatenHerbivore: number;
+    readonly eatenOmnivore: number;
+    readonly eatenCarnivore: number;
+
+    readonly starvedHerbivore: number;
+    readonly starvedOmnivore: number;
+    readonly starvedCarnivore: number;
+
+    constructor(dead: Individual[]) {
+        this.eaten = dead.filter(i => i.eaten).length;
+        this.starved = dead.filter(i => i.starved).length;
+
+        const herbivores = dead.filter(i => i.brain.plantOrMeat.value < 1 / 3);
+        const omnivores = dead.filter(i => i.brain.plantOrMeat.value >= 1 / 3 && i.brain.plantOrMeat.value <= 2 / 3);
+        const carnivores = dead.filter(i => i.brain.plantOrMeat.value > 2 / 3);
+
+        this.eatenHerbivore = herbivores.filter(i => i.eaten).length;
+        this.eatenOmnivore = omnivores.filter(i => i.eaten).length;
+        this.eatenCarnivore = carnivores.filter(i => i.eaten).length;
+
+        this.starvedOmnivore = omnivores.filter(i => i.starved).length;
+        this.starvedHerbivore = herbivores.filter(i => i.starved).length;
+        this.starvedCarnivore = carnivores.filter(i => i.starved).length;
+    }
+}
+
+export class FoodMetrics {
+    readonly uneaten: number;
+    readonly grown: number;
+    readonly remaining: number;
+
+    constructor(environment: Environment) {
+        this.uneaten = environment.uneatenFood;
+        this.grown = environment.grownFood;
+        this.remaining = environment.remainingFood;
+    }
+}
+
+export class AgeMetrics {
+    readonly averageLiving: number | null;
+    readonly oldest: number | null;
+
+    readonly averageDeath: number | null;
+    readonly oldestDeath: number | null;
+
+    constructor(day: number, living: Individual[], dead: Individual[]) {
+        if (living.length > 0) {
+            const ages = living.map(i => i.getAge(day));
+            const sortedAges = [...ages].sort((a, b) => b - a);
+
+            this.averageLiving = ages.reduce((a, b) => a + b, 0) / ages.length;
+            this.oldest = sortedAges[0];
+        } else {
+            this.averageLiving = null;
+            this.oldest = null;
+        }
+
+        if (dead.length > 0) {
+            const deathAges = dead.map(i => i.getAge(day));
+
+            this.averageDeath = deathAges.reduce((a, b) => a + b, 0) / deathAges.length;
+            this.oldestDeath = Math.max(...deathAges);
+        } else {
+            this.averageDeath = null;
+            this.oldestDeath = null;
+        }
+    }
+}
+
+export class OffspringMetrics {
+    readonly averageAlive: number | null;
+    readonly averageTotal: number | null;
+    readonly maxAlive: number | null;
+    readonly maxTotal: number | null;
+
+    constructor(living: Individual[]) {
+        if (living.length > 0) {
+            const aliveOffspring = living.map(i => i.getOffspringSum(false));
+            const totalOffspring = living.map(i => i.getOffspringSum(true));
+            this.averageAlive = aliveOffspring.reduce((a, b) => a + b, 0) / aliveOffspring.length;
+            this.averageTotal = totalOffspring.reduce((a, b) => a + b, 0) / totalOffspring.length;
+            this.maxAlive = Math.max(...aliveOffspring);
+            this.maxTotal = Math.max(...totalOffspring);
+        } else {
+            this.averageAlive = null;
+            this.averageTotal = null;
+            this.maxAlive = null;
+            this.maxTotal = null;
+        }
+    }
+}
+
+export class GeneticsMetrics {
+    readonly eatOrReproduce: GeneMetrics;
+    readonly plantOrMeat: GeneMetrics;
+
+    constructor(state: State) {
+        this.eatOrReproduce = new GeneMetrics(state.individuals.map(i => i.brain.eatOrReproduce.bucket));
+        this.plantOrMeat = new GeneMetrics(state.individuals.map(i => i.brain.plantOrMeat.bucket));
+    }
+}
+
+export class GeneMetrics {
+    counts: number[];
+
+    constructor(buckets: number[]) {
+        this.counts = [];
+
+        for (let i = 1; i <= 9; i++) {
+            this.counts.push(0);
+        }
+
+        for (const bucket of buckets) {
+            this.counts[bucket - 1]++;
+        }
+    }
+}
+
+export class DietDistributionMetrics {
+    readonly herbivore: number;
+    readonly omnivore: number;
+    readonly carnivore: number;
+
+    constructor(living: Individual[]) {
+        this.herbivore = 0;
+        this.omnivore = 0;
+        this.carnivore = 0;
+
+        if (living.length === 0) {
             return;
         }
 
-        for (const key of Object.keys(chromosomes[0].genes)) {
-            this.geneCounts[key] = {};
-            for (let i = 0; i <= 9; i++) {
-                this.geneCounts[key][i] = 0;
-            }
-        }
+        for (const individual of living) {
+            const amountCarnivore = individual.brain.plantOrMeat.value;
 
-        for (const chromosome of chromosomes) {
-            for (const geneKey of Object.keys(chromosome.genes)) {
-                const bucket = chromosome.genes[geneKey].getBucket();
-                this.geneCounts[geneKey][bucket]++;
+            if (amountCarnivore < 1 / 3) {
+                this.herbivore++;
+            } else if (amountCarnivore > 2 / 3) {
+                this.carnivore++;
+            } else {
+                this.omnivore++;
             }
         }
     }

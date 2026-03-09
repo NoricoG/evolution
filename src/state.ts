@@ -2,7 +2,6 @@ import { Environment } from "./environment.js";
 import { Individual } from "./individual.js";
 
 import { Brain } from "./genetics/brain.js";
-import { Diet } from "./genetics/diet.js";
 
 import { intToName } from "./utils/name.js"
 import { SimulationMetrics } from "./metrics.js";
@@ -12,7 +11,7 @@ export class State {
 
     day: number;
 
-    individualsById: { [id: string]: Individual } = {};
+    individualsById = new Map<string, Individual>();
     individuals: Individual[] = [];
 
     individualIdCounter = -1;
@@ -32,8 +31,8 @@ export class State {
 
     private createInitialIndividuals() {
         const firstIndividuals = [
-            new Individual(this.day, null, Brain.neutral(), Diet.neutral()),
-            new Individual(this.day, null, Brain.neutral(), Diet.neutral()),
+            new Individual(this.day, null, Brain.neutral()),
+            new Individual(this.day, null, Brain.neutral()),
         ];
 
         for (const individual of firstIndividuals) {
@@ -50,7 +49,7 @@ export class State {
 
     saveIndividual(individual: Individual) {
         individual.id = this.nextIndividualId();
-        this.individualsById[individual.id] = individual;
+        this.individualsById.set(individual.id, individual);
         this.individuals.push(individual);
     }
 
@@ -63,17 +62,17 @@ export class State {
     }
 
     archiveDeadIndividuals() {
-        for (let individualId of Object.keys(this.individualsById)) {
-            if (this.individualsById[individualId].deathDay) {
-                delete this.individualsById[individualId];
+        for (let [individualId, individual] of this.individualsById.entries()) {
+            if (individual.deathDay) {
+                this.individualsById.delete(individualId);
             }
         }
-        this.individuals = Object.values(this.individualsById);
+        this.individuals = Array.from(this.individualsById.values());
 
         // clean up ancestors when consecutive generations are dead
         for (let individual of this.individuals) {
-            var parent = individual.parent;
-            var deadInARow = 0;
+            let parent = individual.parent;
+            let deadInARow = 0;
             // find consecutive dead parents
             while (parent && deadInARow < 2) {
                 if (parent.deathDay) {
@@ -85,7 +84,7 @@ export class State {
                 parent = parent.parent;
             }
             // clean up earlier parents
-            var nextParent = parent;
+            let nextParent = parent;
             while (nextParent) {
                 const nextNextParent = nextParent.parent;
                 nextParent.parent = null;

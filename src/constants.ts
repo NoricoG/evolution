@@ -1,4 +1,12 @@
-export class Energy {
+export class Constants {
+    static readonly reproductiveAge = 2;
+
+    static readonly foodAttempts = 10;
+
+    static readonly maxChildrenPerReproduction = 2;
+}
+
+export class EnergyConstants {
     static readonly whenBorn = 3;
     static readonly max = 5;
 
@@ -6,8 +14,8 @@ export class Energy {
     static readonly anyAction = -1;
 
     // gain when eating
-    static readonly herbivoreAction = 4;
-    static readonly carnivoreAction = 4;
+    static readonly eatPlantAction = 3;
+    static readonly eatMeatAction = 3;
 
     // buffer needed to reproduce, not spent but must be exceeded
     static readonly bufferForReproduction = 4;

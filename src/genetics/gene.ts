@@ -15,17 +15,12 @@ export class Gene {
     }
 
     toString(): string {
-        const bucket = this.getBucket();
-        if (bucket == 0) return "x";
-        return bucket.toString();
+        return this.bucket.toString();
     }
 
-    getBucket(): number {
-        // keep exactly 0
-        if (this.value == 0) return 0;
-
-        // map 0.00_001 to 1 and map 1 to 9
-        return Math.ceil(this.value * 9);
+    get bucket(): number {
+        // map 0-1 range to 1-9, (0.5 maps to 5)
+        return Math.round(this.value * 8) + 1;
     }
 
     mutated(): Gene {

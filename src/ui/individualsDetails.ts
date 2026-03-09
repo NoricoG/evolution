@@ -1,7 +1,6 @@
 import { Individual } from "../individual.js";
 
 import { Brain } from "../genetics/brain.js";
-import { Diet } from "../genetics/diet.js";
 
 export class IndividualsDetails {
     readonly individuals: Individual[];
@@ -27,12 +26,12 @@ export class IndividualsDetails {
 
         const leftColumn = document.createElement("div");
         leftColumn.className = "column";
-        this.appendCategory(leftColumn, "Top 20 Alive", alive, 20);
+        this.appendCategory(leftColumn, `Alive`, alive, 8);
 
         const rightColumn = document.createElement("div");
         rightColumn.className = "column";
-        this.appendCategory(rightColumn, "Top 10 Eaten", eaten, 10);
-        this.appendCategory(rightColumn, "Top 10 Starved", starved, 10);
+        this.appendCategory(rightColumn, `Eaten`, eaten, 4);
+        this.appendCategory(rightColumn, `Starved`, starved, 4);
 
 
         columnsWrapper.appendChild(leftColumn);
@@ -42,7 +41,7 @@ export class IndividualsDetails {
 
     private appendCategory(container: HTMLElement, category: string, individuals: Individual[], limit: number) {
         const categoryTitle = document.createElement("h4");
-        categoryTitle.innerText = `${category} (${individuals.length})`;
+        categoryTitle.innerText = `${category} (top ${limit} of ${individuals.length})`;
         container.appendChild(categoryTitle);
 
         if (individuals.length === 0) return;
@@ -63,13 +62,13 @@ export class IndividualsDetails {
         const values = {
             "ID": individual.id,
             "Age": individual.getAge(this.day).toString(),
-            [`Brain\n${Brain.geneLabels}`]: individual.brain.toString(),
-            [`Diet\n${Diet.geneLabels}`]: individual.diet.toString(),
+            [`Brain\n🍽️👶`]: individual.brain.eatOrReproduce.toString(),
+            [`Diet\n🥕🥩`]: individual.brain.plantOrMeat.toString(),
             "Action": individual.events[individual.events.length - 1] || "",
             "Energy": this.energyLabel(individual.energy),
             "Ancestors": this.ancestorLabel(individual),
-            "Offspring\nAlive": individual.getOffspringCounts(false).toString(),
-            "Offspring  ▼\nTotal": individual.getOffspringCounts(true).toString(),
+            "Offspring\nAlive": `${individual.getOffspringSum(false)}\n(${individual.getOffspringCounts(false).toString()})`,
+            "Offspring  ▼\nTotal": `${individual.getOffspringSum(true)}\n(${individual.getOffspringCounts(true).toString()})`,
         };
 
         Object.entries(values).forEach(([key, value]) => {
@@ -83,7 +82,7 @@ export class IndividualsDetails {
     }
 
     private energyLabel(energy: number): string {
-        const energyLabels = ["🔴", "🟠", "🟡", "🟢"];
+        const energyLabels = ["🪫", "🔴", "🟠", "🟡", "🟢"];
         if (energy > energyLabels.length - 1) {
             return energyLabels[energyLabels.length - 1];
         }

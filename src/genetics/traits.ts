@@ -9,12 +9,11 @@ export enum TraitGenes {
 // currently not used
 export class Traits extends Chromosome {
     static readonly geneKeys = Object.values(TraitGenes);
-    static readonly geneLabels = "💪🏃‍♂️🤸🏼‍♂️";
 
     canEscape(predator: Traits): boolean {
         for (const trait of Traits.geneKeys) {
-            const preyValue = this.get(trait);
-            const predatorValue = predator.get(trait);
+            const preyValue = this.genes[trait];
+            const predatorValue = predator.genes[trait];
             if (preyValue > predatorValue) {
                 return true;
             }

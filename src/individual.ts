@@ -1,12 +1,9 @@
 import { Brain } from "./genetics/brain.js";
-import { Diet } from "./genetics/diet.js";
 
-import { genomeToColor } from "./utils/color.js";
-import { Energy } from "./energy.js";
+import { Color } from "./utils/color.js";
+import { EnergyConstants } from "./constants.js";
 
 export class Individual {
-    static readonly reproductiveAge = 2;
-
     id: string = "";  // assigned by state
     readonly birthday: number;
     parent: Individual | null;
@@ -15,7 +12,6 @@ export class Individual {
     starved: boolean = false;
 
     readonly brain: Brain;
-    readonly diet: Diet;
 
     events: string[] = [];
 
@@ -23,23 +19,22 @@ export class Individual {
 
     children: Individual[] = [];
 
-    constructor(birthday: number, parent: Individual | null, brain: Brain, diet: Diet) {
+    constructor(birthday: number, parent: Individual | null, brain: Brain) {
         this.birthday = birthday;
 
         this.parent = parent;
 
         this.brain = brain;
-        this.diet = diet;
 
-        this.energy = Energy.whenBorn;
+        this.energy = EnergyConstants.whenBorn;
     }
 
     toString(): string {
-        return `${this.brain.toString()}-${this.diet.toString()}`;
+        return this.brain.toString();
     }
 
     toColor(): string {
-        return genomeToColor(this.diet, this.brain);
+        return Color.genomeToColor(this.brain);
     }
 
     getAge(today: number): number {
@@ -51,16 +46,15 @@ export class Individual {
 
     createChild(today: number): Individual {
         const evolvedBrain = this.brain.mutatedCopy();
-        const evolvedDiet = this.diet.mutatedCopy();
 
-        const baby = new Individual(today, this, evolvedBrain, evolvedDiet);
+        const baby = new Individual(today, this, evolvedBrain);
         this.children.push(baby);
 
         return baby;
     }
 
     getOffspringCounts(includeDead: boolean): number[] {
-        let offspring = [];
+        let offspring: Individual[][] = [];
         let generation = 1;
         offspring.push(this.children);
 
@@ -88,7 +82,7 @@ export class Individual {
 
     // returns any living parents and the first died parent, from young to old
     getParents(): Individual[] {
-        const parents = [];
+        const parents: Individual[] = [];
 
         if (this.parent) {
             parents.push(this.parent);
@@ -113,7 +107,7 @@ export class Individual {
     }
 
     hasHunger(): boolean {
-        return this.energy <= Energy.max - 1;
+        return this.energy <= EnergyConstants.max - 1;
     }
 
     dieEaten(today: number, eaterId: string) {

@@ -38,3 +38,15 @@ td {
     flex: 1;
     min-width: 0;
 }
+
+#charts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+}
+
+.chart-container {
+    width: 400px;
+    height: 300px;
+    position: relative;
+}

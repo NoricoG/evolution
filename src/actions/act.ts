@@ -1,4 +1,4 @@
-import { Energy } from "../energy.js";
+import { Constants, EnergyConstants } from "../constants.js";
 import { Individual } from "../individual.js";
 import { State } from "../state.js";
 
@@ -13,7 +13,7 @@ export class WaitAction extends Action {
     }
 
     execute(state: State): number {
-        return Energy.anyAction;
+        return EnergyConstants.anyAction;
     }
 
     toString(): string {
@@ -21,7 +21,7 @@ export class WaitAction extends Action {
     }
 }
 
-export class HerbivoreAction extends Action {
+export class EatPlantAction extends Action {
     readonly name = "Herbivore";
 
     succesful = false;
@@ -30,15 +30,26 @@ export class HerbivoreAction extends Action {
         return true;
     }
 
-    execute(state: State) {
+    execute(state: State): number {
         if (state.environment.remainingFood > 0) {
-            this.succesful = true;
-            state.environment.remainingFood--;
-            return Energy.anyAction + Energy.herbivoreAction;
-        } else {
-            this.succesful = false;
-            return Energy.anyAction;
+            const eatPlantSkill = 1 - this.individual.brain.plantOrMeat.value;
+
+            let attempts = Constants.foodAttempts;
+            while (attempts > 0) {
+                attempts--;
+                const gatherSucces = Math.random() < eatPlantSkill;
+
+                if (gatherSucces) {
+                    this.succesful = true;
+                    state.environment.remainingFood--;
+                    return EnergyConstants.anyAction + EnergyConstants.eatPlantAction;
+                }
+
+            }
         }
+
+        this.succesful = false;
+        return EnergyConstants.anyAction;
     }
 
     toString() {
@@ -46,7 +57,7 @@ export class HerbivoreAction extends Action {
     }
 }
 
-export class CarnivoreAction extends Action {
+export class EatMeatAction extends Action {
     readonly name = "Carnivore";
 
     victim: Individual | null = null;
@@ -75,39 +86,33 @@ export class CarnivoreAction extends Action {
         return true;
     }
 
-    execute(state: State) {
-        const possibleVictims = state.individuals.filter(v => this.isPossibleVictim(v));
+    execute(state: State): number {
+        const eatMeatSkill = this.individual.brain.plantOrMeat.value;
 
-        if (possibleVictims.length === 0) {
-            console.log(`${this.individual.id} hunts but there are no possible victims`);
-            return Energy.anyAction;
+        let attempts = Constants.foodAttempts;
+        while (attempts > 0) {
+            attempts--;
+
+            let victim = state.individuals[Math.floor(Math.random() * state.individuals.length)];
+            if (!this.isPossibleVictim(victim)) {
+                continue;
+            }
+
+            // 0.4 and 0.6 result in 0.2, 0.1 and 0.9 result in 0.8
+            var victimSkill = (Math.abs(0.5 - victim.brain.plantOrMeat.value)) * 2;
+
+            const skillDifference = eatMeatSkill - victimSkill;
+            const succes = Math.random() < skillDifference;
+            if (succes) {
+                this.victim = victim;
+                victim.dieEaten(state.day, this.individual.id);
+                // TODO: return energy cost based on number of victims hunted and on traits
+                return EnergyConstants.anyAction + EnergyConstants.eatMeatAction;
+            }
         }
 
-        // less prey available, less likely to catch one
-        const victimConcentration = possibleVictims.length / state.environment.maxFood;
-        const victimConcentrationLuck = Math.random();
-        if (victimConcentrationLuck < victimConcentration) {
-            // console.log(`hit ${victimConcentrationLuck.toFixed(2)} < ${victimConcentration.toFixed(2)}`);
-        } else {
-            // console.log(`miss ${victimConcentrationLuck.toFixed(2)} >= ${victimConcentration.toFixed(2)}`);
-            return Energy.anyAction;
-        }
-
-        // the more hunters, the more likely it is someone else will catch the victim first
-        const victimRatio = possibleVictims.length / state.individuals.length;
-        const victimRatioLuck = Math.random();
-        if (victimRatioLuck < victimRatio) {
-            // console.log(`hit ${victimRatioLuck.toFixed(2)} < ${victimRatio.toFixed(2)}`);
-        } else {
-            // console.log(`miss ${victimRatioLuck.toFixed(2)} >= ${victimRatio.toFixed(2)}`);
-            return Energy.anyAction;
-        }
-
-        this.victim = possibleVictims[Math.floor(Math.random() * possibleVictims.length)];
-        this.victim.dieEaten(state.day, this.individual.id);
-
-        // TODO: return energy cost based on number of victims hunted and on traits
-        return Energy.anyAction + Energy.carnivoreAction;
+        // unsuccesful
+        return EnergyConstants.anyAction;
     }
 
     toString(): string {
@@ -123,16 +128,15 @@ export class ReproduceAction extends Action {
     cloneIds: string[] = [];
 
     isPossible(state: State): boolean {
-        const isAdult = this.individual.getAge(state.day) >= Individual.reproductiveAge;
-        const hasEnergy = this.individual.energy > Energy.bufferForReproduction;
+        const isAdult = this.individual.getAge(state.day) >= Constants.reproductiveAge;
+        const hasEnergyConstants = this.individual.energy > EnergyConstants.bufferForReproduction;
 
-        return isAdult && hasEnergy;
+        return isAdult && hasEnergyConstants;
     }
 
     execute(state: State): number {
-        const spendableEnergy = Math.floor(this.individual.energy - Energy.bufferForReproduction);
-        // max 2
-        const numberOfChildren = Math.min(2, spendableEnergy);
+        const spendableEnergyConstants = Math.floor(this.individual.energy - EnergyConstants.bufferForReproduction);
+        const numberOfChildren = Math.min(Constants.maxChildrenPerReproduction, spendableEnergyConstants);
 
         for (let i = 0; i < numberOfChildren; i++) {
             const baby = this.individual.createChild(state.day);
@@ -140,7 +144,7 @@ export class ReproduceAction extends Action {
             this.cloneIds.push(baby.id);
         }
 
-        return Energy.anyAction + Energy.reproductionPerChild * numberOfChildren;
+        return EnergyConstants.anyAction + EnergyConstants.reproductionPerChild * numberOfChildren;
     }
 
     toString(): string {

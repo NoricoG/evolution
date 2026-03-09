@@ -1,5 +1,5 @@
 import { MainAction } from "./actions/decide.js";
-import { Energy } from "./energy.js";
+import { EnergyConstants } from "./constants.js";
 import { Individual } from "./individual.js";
 import { State } from "./state.js";
 
@@ -11,7 +11,7 @@ export class Iterations {
         this.state = state;
     }
 
-    execute(iterations: number) {
+    execute(iterations: number): boolean {
         for (let i = 0; i < iterations; i++) {
             this.state.archiveDeadIndividuals();
             this.state.day++;
@@ -23,10 +23,16 @@ export class Iterations {
 
             this.state.metrics.addDayMetrics(this.state);
 
-            if (this.state.individuals.filter(individual => !individual.deathDay).length == 0) {
-                alert("All individuals have died. Reload the page for a new simulation.");
+            const allDead = this.state.individuals.filter(individual => !individual.deathDay).length == 0;
+            if (allDead) {
+                const anyDiedToday = this.state.individuals.filter(individual => individual.deathDay == this.state.day).length > 0;
+                if (anyDiedToday) {
+                    alert("All individuals have died. Reload the page for a new simulation.");
+                }
+                return false;
             }
         }
+        return true;
     }
 
     private actAllIndividuals() {
@@ -43,8 +49,8 @@ export class Iterations {
                 const gainedEnergy = mainAction.execute(this.state);
 
                 individual.energy += gainedEnergy;
-                if (individual.energy > Energy.max) {
-                    individual.energy = Energy.max;
+                if (individual.energy > EnergyConstants.max) {
+                    individual.energy = EnergyConstants.max;
                 }
             }
         }
