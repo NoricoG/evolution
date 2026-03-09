@@ -3,8 +3,8 @@ import { Individual } from "./individual.js";
 
 import { Brain } from "./genetics/brain.js";
 
-import { intToName } from "./utils/name.js"
-import { SimulationMetrics } from "./metrics.js";
+import { intToName } from "../utils/name.js"
+import { ActionMetrics, SimulationMetrics } from "../app/charts/metrics.js";
 
 
 export class State {
@@ -39,7 +39,7 @@ export class State {
             this.saveIndividual(individual);
         }
 
-        this.metrics.addDayMetrics(this);
+        this.metrics.addDayMetrics(this, new ActionMetrics());
     }
 
     private nextIndividualId(): string {

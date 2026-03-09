@@ -35,6 +35,9 @@ export class EatPlantAction extends Action {
             const eatPlantSkill = 1 - this.individual.brain.plantOrMeat.value;
 
             let attempts = Constants.foodAttempts;
+            if (attempts > state.environment.remainingFood) {
+                attempts = state.environment.remainingFood;
+            }
             while (attempts > 0) {
                 attempts--;
                 const gatherSucces = Math.random() < eatPlantSkill;
@@ -90,6 +93,9 @@ export class EatMeatAction extends Action {
         const eatMeatSkill = this.individual.brain.plantOrMeat.value;
 
         let attempts = Constants.foodAttempts;
+        if (attempts > state.individuals.length) {
+            attempts = state.individuals.length;
+        }
         while (attempts > 0) {
             attempts--;
 

@@ -1,4 +1,4 @@
-import { Brain } from "../genetics/brain.js";
+import { Brain } from "../simulation/genetics/brain.js";
 
 export class Color {
 

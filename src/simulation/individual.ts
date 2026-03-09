@@ -1,6 +1,6 @@
 import { Brain } from "./genetics/brain.js";
 
-import { Color } from "./utils/color.js";
+import { Color } from "../utils/color.js";
 import { EnergyConstants } from "./constants.js";
 
 export class Individual {

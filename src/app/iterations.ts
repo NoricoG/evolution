@@ -1,7 +1,8 @@
-import { MainAction } from "./actions/decide.js";
-import { EnergyConstants } from "./constants.js";
-import { Individual } from "./individual.js";
-import { State } from "./state.js";
+import { EatPlantAction, EatMeatAction, ReproduceAction, WaitAction } from "../simulation/actions/act.js";
+import { EatAction, MainAction } from "../simulation/actions/decide.js";
+import { EnergyConstants } from "../simulation/constants.js";
+import { State } from "../simulation/state.js";
+import { ActionMetrics } from "./charts/metrics.js";
 
 export class Iterations {
 
@@ -18,10 +19,10 @@ export class Iterations {
 
             this.state.updateEnvironment();
 
-            this.actAllIndividuals();
+            const actionMetrics = this.actAllIndividuals();
             this.starveIndividuals();
 
-            this.state.metrics.addDayMetrics(this.state);
+            this.state.metrics.addDayMetrics(this.state, actionMetrics);
 
             const allDead = this.state.individuals.filter(individual => !individual.deathDay).length == 0;
             if (allDead) {
@@ -35,7 +36,9 @@ export class Iterations {
         return true;
     }
 
-    private actAllIndividuals() {
+    private actAllIndividuals(): ActionMetrics {
+        const actionMetrics = new ActionMetrics();
+
         // shuffle individuals
         const individuals = this.state.individuals;
         for (let i = individuals.length - 1; i > 0; i--) {
@@ -47,12 +50,33 @@ export class Iterations {
             const mainAction = new MainAction(individual);
             if (mainAction.isPossible(this.state)) {
                 const gainedEnergy = mainAction.execute(this.state);
+                this.recordActionStats(mainAction, actionMetrics);
 
                 individual.energy += gainedEnergy;
                 if (individual.energy > EnergyConstants.max) {
                     individual.energy = EnergyConstants.max;
                 }
             }
+        }
+
+        return actionMetrics;
+    }
+
+    private recordActionStats(mainAction: MainAction, actionMetrics: ActionMetrics) {
+        const chosen = mainAction.chosenAction;
+        if (chosen instanceof EatAction) {
+            const leafAction = chosen.chosenAction;
+            if (leafAction instanceof EatPlantAction) {
+                if (leafAction.succesful) actionMetrics.eatPlantSuccess++;
+                else actionMetrics.eatPlantFail++;
+            } else if (leafAction instanceof EatMeatAction) {
+                if (leafAction.victim) actionMetrics.eatMeatSuccess++;
+                else actionMetrics.eatMeatFail++;
+            }
+        } else if (chosen instanceof ReproduceAction) {
+            actionMetrics.offspringCounts.push(chosen.cloneIds.length);
+        } else if (chosen instanceof WaitAction) {
+            actionMetrics.wait++;
         }
     }
 

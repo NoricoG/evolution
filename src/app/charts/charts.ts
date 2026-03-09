@@ -1,6 +1,6 @@
-import { DayMetrics } from "../metrics.js";
+import { DayMetrics } from "./metrics.js";
 import { BaseChart, LineChart, MatrixChart } from "./chartHelpers.js";
-import { Color } from "../utils/color.js";
+import { Color } from "../../utils/color.js";
 
 export class Charts {
     private readonly charts: Array<Array<BaseChart>>;
@@ -29,7 +29,7 @@ export class Charts {
             [
                 new LineChart("deaths-chart", "Count", undefined, m => [
                     { label: "Eaten", data: m.map(d => d.eatenStarved.eaten), borderColor: Color.carnivore },
-                    { label: "Starved", data: m.map(d => d.eatenStarved.starved), borderColor: Color.bad },
+                    { label: "Starved", data: m.map(d => d.eatenStarved.starved), borderColor: Color.omnivore },
                 ]),
                 new LineChart("food-chart", "Food", 0, m => [
                     { label: "Food at start", data: m.map(d => d.food.grown), borderColor: Color.good },
@@ -59,18 +59,38 @@ export class Charts {
                 ]),
             ],
             [
-                new LineChart("avg-offspring-chart", "Offspring", 0, m => [
-                    { label: "Avg alive offspring", data: m.map(d => d.offspring.averageAlive), borderColor: Color.good, spanGaps: true },
-                    { label: "Avg total offspring", data: m.map(d => d.offspring.averageTotal), borderColor: Color.bad, spanGaps: true },
-                ]),
-                new LineChart("max-offspring-chart", "Offspring", 0, m => [
+                new LineChart("alive-offspring-chart", "Offspring", 0, m => [
+                    { label: "Avg alive offspring", data: m.map(d => d.offspring.averageAlive), borderColor: Color.neutral, spanGaps: true },
                     { label: "Max alive offspring", data: m.map(d => d.offspring.maxAlive), borderColor: Color.good, spanGaps: true },
+
+                ]),
+                new LineChart("total-offspring-chart", "Offspring", 0, m => [
+                    { label: "Avg total offspring", data: m.map(d => d.offspring.averageTotal), borderColor: Color.neutral, spanGaps: true },
                     { label: "Max total offspring", data: m.map(d => d.offspring.maxTotal), borderColor: Color.bad, spanGaps: true },
                 ]),
             ],
             [
-                new MatrixChart("gene-plant-or-meat-chart", "Plant", "Meat", Color.plantOrMeat, m => m.genetics.plantOrMeat),
-                new MatrixChart("gene-eat-or-reproduce-chart", "Eat", "Reproduce", Color.eatOrReproduce, m => m.genetics.eatOrReproduce),
+                new LineChart("action-plant-success-chart", "Count", 0, m => [
+                    { label: "Eat plant success", data: m.map(d => d.actions.eatPlantSuccess), borderColor: Color.good },
+                    { label: "Eat plant fail", data: m.map(d => d.actions.eatPlantFail), borderColor: Color.bad },
+                ]),
+                new LineChart("action-meat-success-chart", "Count", 0, m => [
+                    { label: "Eat meat success", data: m.map(d => d.actions.eatMeatSuccess), borderColor: Color.good },
+                    { label: "Eat meat fail", data: m.map(d => d.actions.eatMeatFail), borderColor: Color.bad },
+                ]),
+            ],
+            [
+                new LineChart("action-offspring-chart", "Count", 0, m => [
+                    { label: "Offspring", data: m.map(d => d.actions.offspringCounts.reduce((s, n) => s + n, 0)), borderColor: Color.good },
+                ]),
+            ],
+            [
+                new MatrixChart("gene-plant-or-meat-chart-relative", "Plant", "Meat", Color.plantOrMeat, m => m.genetics.plantOrMeat, true),
+                new MatrixChart("gene-plant-or-meat-chart-absolute", "Plant", "Meat", Color.plantOrMeat, m => m.genetics.plantOrMeat, false),
+            ],
+            [
+                new MatrixChart("gene-eat-or-reproduce-chart-relative", "Eat", "Reproduce", Color.eatOrReproduce, m => m.genetics.eatOrReproduce, true),
+                new MatrixChart("gene-eat-or-reproduce-chart-absolute", "Eat", "Reproduce", Color.eatOrReproduce, m => m.genetics.eatOrReproduce, false),
             ],
         ];
 

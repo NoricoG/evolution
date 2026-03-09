@@ -1,7 +1,6 @@
-export class Gene {
-    static readonly shiftRange = 0.3;
-    static readonly geneFlipChance = 0.05; // disabled for testing
+import { GeneConstants } from "../constants";
 
+export class Gene {
     // between 0 and 1 (inclusive)
     readonly value: number;
 
@@ -24,7 +23,7 @@ export class Gene {
     }
 
     mutated(): Gene {
-        if (Math.random() < Gene.geneFlipChance) {
+        if (Math.random() < GeneConstants.geneFlipChance) {
             return this.inverted();
         } else {
             return this.shifted();
@@ -36,7 +35,7 @@ export class Gene {
     }
 
     private shifted(): Gene {
-        const shift = Math.random() * Gene.shiftRange - Gene.shiftRange / 2;
+        const shift = Math.random() * GeneConstants.shiftRange - GeneConstants.shiftRange / 2;
         let shifted = this.value + shift;
         if (shifted < 0) {
             shifted = 0;

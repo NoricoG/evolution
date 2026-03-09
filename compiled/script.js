@@ -1,6 +1,6 @@
 "use strict";
 (() => {
-  // src/ui/individualsDetails.ts
+  // src/app/ui/individualsDetails.ts
   var IndividualsDetails = class {
     individuals;
     day;
@@ -15,18 +15,11 @@
       const alive = this.individuals.filter((individual) => !individual.deathDay);
       const eaten = this.individuals.filter((individual) => individual.eaten);
       const starved = this.individuals.filter((individual) => individual.starved);
-      const columnsWrapper = document.createElement("div");
-      columnsWrapper.className = "individuals-columns";
-      const leftColumn = document.createElement("div");
-      leftColumn.className = "column";
-      this.appendCategory(leftColumn, `Alive`, alive, 8);
-      const rightColumn = document.createElement("div");
-      rightColumn.className = "column";
-      this.appendCategory(rightColumn, `Eaten`, eaten, 4);
-      this.appendCategory(rightColumn, `Starved`, starved, 4);
-      columnsWrapper.appendChild(leftColumn);
-      columnsWrapper.appendChild(rightColumn);
-      individualsDiv.appendChild(columnsWrapper);
+      const wrapper = document.createElement("div");
+      this.appendCategory(wrapper, `Alive`, alive, 4);
+      this.appendCategory(wrapper, `Eaten`, eaten, 2);
+      this.appendCategory(wrapper, `Starved`, starved, 2);
+      individualsDiv.appendChild(wrapper);
     }
     appendCategory(container, category, individuals, limit2) {
       const categoryTitle = document.createElement("h4");
@@ -130,7 +123,35 @@
     }
   };
 
-  // src/environment.ts
+  // src/simulation/constants.ts
+  var Constants = class {
+    static foodAttempts = 9 + Math.round(Math.random() * 2);
+    static reproductiveAge = 2;
+    static maxChildrenPerReproduction = 2;
+  };
+  var EnvironmentConstants = class {
+    static foodRegeneration = 15 + Math.round(Math.random() * 15);
+    static preserveRemainingFood = 0.1 + Math.random() * 0.2;
+  };
+  var GeneConstants = class {
+    static shiftRange = 0.05 + Math.random() * 0.1;
+    static geneFlipChance = 0.05 + Math.random() * 0.1;
+  };
+  var EnergyConstants = class {
+    static whenBorn = 3;
+    static max = 5;
+    // cost per turn, added to any action
+    static anyAction = -1;
+    // gain when eating
+    static eatPlantAction = 3;
+    static eatMeatAction = 3;
+    // buffer needed to reproduce, not spent but must be exceeded
+    static bufferForReproduction = 4;
+    // energy spent per child when reproducing
+    static reproductionPerChild = -1;
+  };
+
+  // src/simulation/environment.ts
   var Environment = class {
     uneatenFood;
     grownFood;
@@ -149,7 +170,7 @@
     nextDay() {
       this.uneatenFood = this.remainingFood;
       const possibleGrowth = this.maxFood - this.uneatenFood;
-      this.grownFood = Math.round(this.uneatenFood + possibleGrowth / 2);
+      this.grownFood = Math.round(this.uneatenFood * EnvironmentConstants.preserveRemainingFood + EnvironmentConstants.foodRegeneration);
       this.remainingFood = this.grownFood;
     }
   };
@@ -197,27 +218,7 @@
     }
   };
 
-  // src/constants.ts
-  var Constants = class {
-    static reproductiveAge = 2;
-    static foodAttempts = 10;
-    static maxChildrenPerReproduction = 2;
-  };
-  var EnergyConstants = class {
-    static whenBorn = 3;
-    static max = 5;
-    // cost per turn, added to any action
-    static anyAction = -1;
-    // gain when eating
-    static eatPlantAction = 3;
-    static eatMeatAction = 3;
-    // buffer needed to reproduce, not spent but must be exceeded
-    static bufferForReproduction = 4;
-    // energy spent per child when reproducing
-    static reproductionPerChild = -1;
-  };
-
-  // src/individual.ts
+  // src/simulation/individual.ts
   var Individual = class _Individual {
     id = "";
     // assigned by state
@@ -327,11 +328,8 @@ ${i + 1} ${this.events[i]}`;
     }
   };
 
-  // src/genetics/gene.ts
+  // src/simulation/genetics/gene.ts
   var Gene = class _Gene {
-    static shiftRange = 0.3;
-    static geneFlipChance = 0.05;
-    // disabled for testing
     // between 0 and 1 (inclusive)
     value;
     constructor(value) {
@@ -348,7 +346,7 @@ ${i + 1} ${this.events[i]}`;
       return Math.round(this.value * 8) + 1;
     }
     mutated() {
-      if (Math.random() < _Gene.geneFlipChance) {
+      if (Math.random() < GeneConstants.geneFlipChance) {
         return this.inverted();
       } else {
         return this.shifted();
@@ -358,7 +356,7 @@ ${i + 1} ${this.events[i]}`;
       return new _Gene(1 - this.value);
     }
     shifted() {
-      const shift = Math.random() * _Gene.shiftRange - _Gene.shiftRange / 2;
+      const shift = Math.random() * GeneConstants.shiftRange - GeneConstants.shiftRange / 2;
       let shifted = this.value + shift;
       if (shifted < 0) {
         shifted = 0;
@@ -379,7 +377,7 @@ ${i + 1} ${this.events[i]}`;
     }
   };
 
-  // src/genetics/chromosome.ts
+  // src/simulation/genetics/chromosome.ts
   var Chromosome = class {
     static geneKeys = [];
     genes;
@@ -407,7 +405,7 @@ ${i + 1} ${this.events[i]}`;
     }
   };
 
-  // src/genetics/brain.ts
+  // src/simulation/genetics/brain.ts
   var BrainGenes = /* @__PURE__ */ ((BrainGenes2) => {
     BrainGenes2["EatOrReproduce"] = "EatOrReproduce";
     BrainGenes2["PlantOrMeat"] = "PlantOrMeat";
@@ -443,12 +441,12 @@ ${i + 1} ${this.events[i]}`;
     return name;
   }
 
-  // src/metrics.ts
+  // src/app/charts/metrics.ts
   var SimulationMetrics = class {
     dayMetrics = [];
-    addDayMetrics(state) {
-      this.dayMetrics.push(new DayMetrics(state));
-      if (this.dayMetrics.length > 1e3) {
+    addDayMetrics(state, actionMetrics) {
+      this.dayMetrics.push(new DayMetrics(state, actionMetrics));
+      if (this.dayMetrics.length > 500) {
         this.dayMetrics.shift();
       }
     }
@@ -462,7 +460,8 @@ ${i + 1} ${this.events[i]}`;
     offspring;
     genetics;
     dietDistribution;
-    constructor(state) {
+    actions;
+    constructor(state, actionMetrics) {
       const living = state.individuals.filter((i) => !i.deathDay);
       const dead = state.individuals.filter((i) => i.deathDay);
       this.day = state.day;
@@ -473,6 +472,7 @@ ${i + 1} ${this.events[i]}`;
       this.offspring = new OffspringMetrics(living);
       this.genetics = new GeneticsMetrics(state);
       this.dietDistribution = new DietDistributionMetrics(living);
+      this.actions = actionMetrics;
     }
   };
   var PopulationMetrics = class {
@@ -607,8 +607,16 @@ ${i + 1} ${this.events[i]}`;
       }
     }
   };
+  var ActionMetrics = class {
+    eatPlantSuccess = 0;
+    eatPlantFail = 0;
+    eatMeatSuccess = 0;
+    eatMeatFail = 0;
+    offspringCounts = [];
+    wait = 0;
+  };
 
-  // src/state.ts
+  // src/simulation/state.ts
   var State = class {
     day;
     individualsById = /* @__PURE__ */ new Map();
@@ -629,7 +637,7 @@ ${i + 1} ${this.events[i]}`;
       for (const individual of firstIndividuals) {
         this.saveIndividual(individual);
       }
-      this.metrics.addDayMetrics(this);
+      this.metrics.addDayMetrics(this, new ActionMetrics());
     }
     nextIndividualId() {
       this.individualIdCounter++;
@@ -12437,8 +12445,26 @@ ${i + 1} ${this.events[i]}`;
     height: 20
   };
 
-  // src/ui/chartHelpers.ts
+  // src/app/charts/chartHelpers.ts
   Chart.register(LineController, LineElement, PointElement, CategoryScale, LinearScale, plugin_tooltip, plugin_legend, MatrixController, MatrixElement);
+  function getTickStepSize(numDays) {
+    if (numDays <= 50) return 5;
+    if (numDays <= 150) return 10;
+    if (numDays <= 300) return 25;
+    if (numDays <= 600) return 50;
+    return 100;
+  }
+  var baseChartOptions = {
+    responsive: true,
+    maintainAspectRatio: false,
+    animation: false,
+    transitions: {
+      default: { animation: { duration: 0 } },
+      // data updates (e.g. x-axis extension)
+      active: { animation: { duration: 0 } }
+      // hover
+    }
+  };
   var BaseChart = class {
     constructor(canvasId) {
       this.canvasId = canvasId;
@@ -12464,6 +12490,8 @@ ${i + 1} ${this.events[i]}`;
     update(dayMetrics) {
       const labels = dayMetrics.map((m) => m.day.toString());
       const datasets = this.getDatasets(dayMetrics);
+      const stepSize = getTickStepSize(dayMetrics.length);
+      const xTicks = { callback: (_, index) => index % stepSize === 0 ? labels[index] : null };
       if (!this.chart) {
         if (!this.initializeChart({
           type: "line",
@@ -12473,17 +12501,16 @@ ${i + 1} ${this.events[i]}`;
               label: ds.label,
               data: ds.data,
               borderColor: ds.borderColor,
+              borderWidth: 1.5,
               fill: false,
               spanGaps: ds.spanGaps ?? false,
-              pointRadius: 0
+              pointRadius: 0.5
             }))
           },
           options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            animation: false,
+            ...baseChartOptions,
             scales: {
-              x: { title: { display: true, text: "Day" } },
+              x: { title: { display: false }, ticks: xTicks },
               y: {
                 title: { display: true, text: this.yLabel },
                 ...this.yMin !== void 0 ? { min: this.yMin } : {}
@@ -12496,17 +12523,19 @@ ${i + 1} ${this.events[i]}`;
         for (let i = 0; i < datasets.length; i++) {
           this.chart.data.datasets[i].data = datasets[i].data;
         }
+        this.chart.options.scales.x.ticks = xTicks;
         this.chart.update();
       }
     }
   };
   var MatrixChart = class extends BaseChart {
-    constructor(canvasId, labelA, labelB, rgbColor, getGeneMetrics) {
+    constructor(canvasId, labelA, labelB, rgbColor, getGeneMetrics, relative) {
       super(canvasId);
       this.labelA = labelA;
       this.labelB = labelB;
       this.rgbColor = rgbColor;
       this.getGeneMetrics = getGeneMetrics;
+      this.relative = relative;
     }
     update(dayMetrics) {
       const data = [];
@@ -12514,21 +12543,27 @@ ${i + 1} ${this.events[i]}`;
         const geneMetrics = this.getGeneMetrics(m);
         const total = m.population.alive || 1;
         for (let bucket = 1; bucket <= 9; bucket++) {
-          data.push({ x: m.day, y: bucket, v: (geneMetrics.counts[bucket - 1] ?? 0) / total });
+          let value = geneMetrics.counts[bucket - 1] ?? 0;
+          if (this.relative) {
+            value /= total;
+          }
+          data.push({ x: m.day, y: bucket, v: value });
         }
       }
       const numDays = dayMetrics.length || 1;
-      const { labelA, labelB, rgbColor } = this;
+      const stepSize = getTickStepSize(numDays);
+      const maxValue = this.relative ? 1 : Math.max(...data.map((d) => d.v), 1);
+      const { labelA, labelB, rgbColor, relative } = this;
       if (!this.chart) {
         if (!this.initializeChart({
           type: "matrix",
           data: {
             datasets: [{
-              label: `${labelA} or ${labelB}`,
+              label: `${labelA} or ${labelB} ${relative ? "(relative)" : "(absolute)"}`,
               data,
               backgroundColor(context) {
                 const v = context.dataset.data[context.dataIndex].v;
-                return Color.rgbToRgba(rgbColor, v);
+                return Color.rgbToRgba(rgbColor, v / maxValue);
               },
               borderColor: Color.rgbToRgba(rgbColor, 0.15),
               borderWidth: 1,
@@ -12543,14 +12578,13 @@ ${i + 1} ${this.events[i]}`;
             }]
           },
           options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            animation: false,
+            ...baseChartOptions,
             scales: {
               x: {
                 type: "linear",
                 offset: true,
-                title: { display: true, text: "Day" }
+                title: { display: false },
+                ticks: { stepSize }
               },
               y: {
                 type: "linear",
@@ -12565,10 +12599,14 @@ ${i + 1} ${this.events[i]}`;
             plugins: {
               tooltip: {
                 callbacks: {
-                  title: () => `${labelA} or ${labelB}`,
+                  title: () => `${labelA} or ${labelB} ${relative ? "(relative)" : "(absolute)"}$`,
                   label(context) {
                     const d = context.dataset.data[context.dataIndex];
-                    return `Day ${d.x}, Bucket ${d.y}: ${(d.v * 100).toFixed(1)}%`;
+                    if (relative) {
+                      return `Day ${d.x}, Bucket ${d.y}: ${(d.v * 100).toFixed(1)}%`;
+                    } else {
+                      return `Day ${d.x}, Bucket ${d.y}: ${d.v}`;
+                    }
                   }
                 }
               }
@@ -12577,16 +12615,21 @@ ${i + 1} ${this.events[i]}`;
         })) return;
       } else {
         this.chart.data.datasets[0].data = data;
+        this.chart.data.datasets[0].backgroundColor = (context) => {
+          const v = context.dataset.data[context.dataIndex].v;
+          return Color.rgbToRgba(rgbColor, v / maxValue);
+        };
         this.chart.data.datasets[0].width = ({ chart: c }) => {
           const area = c.chartArea;
           return area ? Math.max(2, area.width / numDays - 1) : 10;
         };
+        this.chart.options.scales.x.ticks = { stepSize };
         this.chart.update();
       }
     }
   };
 
-  // src/ui/charts.ts
+  // src/app/charts/charts.ts
   var Charts = class {
     charts;
     constructor() {
@@ -12613,7 +12656,7 @@ ${i + 1} ${this.events[i]}`;
         [
           new LineChart("deaths-chart", "Count", void 0, (m) => [
             { label: "Eaten", data: m.map((d) => d.eatenStarved.eaten), borderColor: Color.carnivore },
-            { label: "Starved", data: m.map((d) => d.eatenStarved.starved), borderColor: Color.bad }
+            { label: "Starved", data: m.map((d) => d.eatenStarved.starved), borderColor: Color.omnivore }
           ]),
           new LineChart("food-chart", "Food", 0, (m) => [
             { label: "Food at start", data: m.map((d) => d.food.grown), borderColor: Color.good },
@@ -12643,18 +12686,37 @@ ${i + 1} ${this.events[i]}`;
           ])
         ],
         [
-          new LineChart("avg-offspring-chart", "Offspring", 0, (m) => [
-            { label: "Avg alive offspring", data: m.map((d) => d.offspring.averageAlive), borderColor: Color.good, spanGaps: true },
-            { label: "Avg total offspring", data: m.map((d) => d.offspring.averageTotal), borderColor: Color.bad, spanGaps: true }
+          new LineChart("alive-offspring-chart", "Offspring", 0, (m) => [
+            { label: "Avg alive offspring", data: m.map((d) => d.offspring.averageAlive), borderColor: Color.neutral, spanGaps: true },
+            { label: "Max alive offspring", data: m.map((d) => d.offspring.maxAlive), borderColor: Color.good, spanGaps: true }
           ]),
-          new LineChart("max-offspring-chart", "Offspring", 0, (m) => [
-            { label: "Max alive offspring", data: m.map((d) => d.offspring.maxAlive), borderColor: Color.good, spanGaps: true },
+          new LineChart("total-offspring-chart", "Offspring", 0, (m) => [
+            { label: "Avg total offspring", data: m.map((d) => d.offspring.averageTotal), borderColor: Color.neutral, spanGaps: true },
             { label: "Max total offspring", data: m.map((d) => d.offspring.maxTotal), borderColor: Color.bad, spanGaps: true }
           ])
         ],
         [
-          new MatrixChart("gene-plant-or-meat-chart", "Plant", "Meat", Color.plantOrMeat, (m) => m.genetics.plantOrMeat),
-          new MatrixChart("gene-eat-or-reproduce-chart", "Eat", "Reproduce", Color.eatOrReproduce, (m) => m.genetics.eatOrReproduce)
+          new LineChart("action-plant-success-chart", "Count", 0, (m) => [
+            { label: "Eat plant success", data: m.map((d) => d.actions.eatPlantSuccess), borderColor: Color.good },
+            { label: "Eat plant fail", data: m.map((d) => d.actions.eatPlantFail), borderColor: Color.bad }
+          ]),
+          new LineChart("action-meat-success-chart", "Count", 0, (m) => [
+            { label: "Eat meat success", data: m.map((d) => d.actions.eatMeatSuccess), borderColor: Color.good },
+            { label: "Eat meat fail", data: m.map((d) => d.actions.eatMeatFail), borderColor: Color.bad }
+          ])
+        ],
+        [
+          new LineChart("action-offspring-chart", "Count", 0, (m) => [
+            { label: "Offspring", data: m.map((d) => d.actions.offspringCounts.reduce((s, n) => s + n, 0)), borderColor: Color.good }
+          ])
+        ],
+        [
+          new MatrixChart("gene-plant-or-meat-chart-relative", "Plant", "Meat", Color.plantOrMeat, (m) => m.genetics.plantOrMeat, true),
+          new MatrixChart("gene-plant-or-meat-chart-absolute", "Plant", "Meat", Color.plantOrMeat, (m) => m.genetics.plantOrMeat, false)
+        ],
+        [
+          new MatrixChart("gene-eat-or-reproduce-chart-relative", "Eat", "Reproduce", Color.eatOrReproduce, (m) => m.genetics.eatOrReproduce, true),
+          new MatrixChart("gene-eat-or-reproduce-chart-absolute", "Eat", "Reproduce", Color.eatOrReproduce, (m) => m.genetics.eatOrReproduce, false)
         ]
       ];
       this.buildDOM();
@@ -12684,7 +12746,7 @@ ${i + 1} ${this.events[i]}`;
     }
   };
 
-  // src/actions/action.ts
+  // src/simulation/actions/action.ts
   var Action = class {
     individual;
     constructor(individual) {
@@ -12692,7 +12754,7 @@ ${i + 1} ${this.events[i]}`;
     }
   };
 
-  // src/actions/act.ts
+  // src/simulation/actions/act.ts
   var WaitAction = class extends Action {
     name = "Wait";
     isPossible(state) {
@@ -12715,6 +12777,9 @@ ${i + 1} ${this.events[i]}`;
       if (state.environment.remainingFood > 0) {
         const eatPlantSkill = 1 - this.individual.brain.plantOrMeat.value;
         let attempts = Constants.foodAttempts;
+        if (attempts > state.environment.remainingFood) {
+          attempts = state.environment.remainingFood;
+        }
         while (attempts > 0) {
           attempts--;
           const gatherSucces = Math.random() < eatPlantSkill;
@@ -12756,6 +12821,9 @@ ${i + 1} ${this.events[i]}`;
     execute(state) {
       const eatMeatSkill = this.individual.brain.plantOrMeat.value;
       let attempts = Constants.foodAttempts;
+      if (attempts > state.individuals.length) {
+        attempts = state.individuals.length;
+      }
       while (attempts > 0) {
         attempts--;
         let victim = state.individuals[Math.floor(Math.random() * state.individuals.length)];
@@ -12801,7 +12869,7 @@ ${i + 1} ${this.events[i]}`;
     }
   };
 
-  // src/actions/decide.ts
+  // src/simulation/actions/decide.ts
   function decide(aOrB, actionA, actionB, state) {
     const possibleA = actionA.isPossible(state);
     const possibleB = actionB.isPossible(state);
@@ -12817,6 +12885,7 @@ ${i + 1} ${this.events[i]}`;
   }
   var MainAction = class extends Action {
     name = "Main";
+    chosenAction = null;
     isPossible(state) {
       return !this.individual.deathDay && this.individual.getAge(state.day) > 1;
     }
@@ -12824,9 +12893,9 @@ ${i + 1} ${this.events[i]}`;
       const eatAction = new EatAction(this.individual);
       const reproduceAction = new ReproduceAction(this.individual);
       const eatOrReproduce = this.individual.brain.eatOrReproduce.value;
-      const chosenAction = decide(eatOrReproduce, eatAction, reproduceAction, state) || new WaitAction(this.individual);
-      const gainedEnergy = chosenAction.execute(state);
-      this.individual.events.push(chosenAction.toString());
+      this.chosenAction = decide(eatOrReproduce, eatAction, reproduceAction, state) || new WaitAction(this.individual);
+      const gainedEnergy = this.chosenAction.execute(state);
+      this.individual.events.push(this.chosenAction.toString());
       return gainedEnergy;
     }
     toString() {
@@ -12855,7 +12924,7 @@ ${i + 1} ${this.events[i]}`;
     }
   };
 
-  // src/iterations.ts
+  // src/app/iterations.ts
   var Iterations = class {
     state;
     constructor(state) {
@@ -12866,9 +12935,9 @@ ${i + 1} ${this.events[i]}`;
         this.state.archiveDeadIndividuals();
         this.state.day++;
         this.state.updateEnvironment();
-        this.actAllIndividuals();
+        const actionMetrics = this.actAllIndividuals();
         this.starveIndividuals();
-        this.state.metrics.addDayMetrics(this.state);
+        this.state.metrics.addDayMetrics(this.state, actionMetrics);
         const allDead = this.state.individuals.filter((individual) => !individual.deathDay).length == 0;
         if (allDead) {
           const anyDiedToday = this.state.individuals.filter((individual) => individual.deathDay == this.state.day).length > 0;
@@ -12881,6 +12950,7 @@ ${i + 1} ${this.events[i]}`;
       return true;
     }
     actAllIndividuals() {
+      const actionMetrics = new ActionMetrics();
       const individuals = this.state.individuals;
       for (let i = individuals.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1));
@@ -12890,11 +12960,30 @@ ${i + 1} ${this.events[i]}`;
         const mainAction = new MainAction(individual);
         if (mainAction.isPossible(this.state)) {
           const gainedEnergy = mainAction.execute(this.state);
+          this.recordActionStats(mainAction, actionMetrics);
           individual.energy += gainedEnergy;
           if (individual.energy > EnergyConstants.max) {
             individual.energy = EnergyConstants.max;
           }
         }
+      }
+      return actionMetrics;
+    }
+    recordActionStats(mainAction, actionMetrics) {
+      const chosen = mainAction.chosenAction;
+      if (chosen instanceof EatAction) {
+        const leafAction = chosen.chosenAction;
+        if (leafAction instanceof EatPlantAction) {
+          if (leafAction.succesful) actionMetrics.eatPlantSuccess++;
+          else actionMetrics.eatPlantFail++;
+        } else if (leafAction instanceof EatMeatAction) {
+          if (leafAction.victim) actionMetrics.eatMeatSuccess++;
+          else actionMetrics.eatMeatFail++;
+        }
+      } else if (chosen instanceof ReproduceAction) {
+        actionMetrics.offspringCounts.push(chosen.cloneIds.length);
+      } else if (chosen instanceof WaitAction) {
+        actionMetrics.wait++;
       }
     }
     starveIndividuals() {
@@ -12908,7 +12997,7 @@ ${i + 1} ${this.events[i]}`;
     }
   };
 
-  // src/iterationLoop.ts
+  // src/app/iterationLoop.ts
   var IterationLoop = class {
     iterations;
     playInterval = void 0;
@@ -12930,8 +13019,8 @@ ${i + 1} ${this.events[i]}`;
       this.playInterval = void 0;
     }
     startInterval(fast) {
-      const wait = fast ? 100 : 800;
-      const iterationsAmount = fast ? 1 : 1;
+      const wait = fast ? 100 : 200;
+      const iterationsAmount = fast ? 5 : 1;
       this.playInterval = setInterval(() => {
         const continueLoop = this.iterations.execute(iterationsAmount);
         this.onUpdate();
@@ -12942,7 +13031,7 @@ ${i + 1} ${this.events[i]}`;
     }
   };
 
-  // src/ui/ui.ts
+  // src/app/ui/ui.ts
   window.onload = () => new UI();
   var UI = class {
     state;

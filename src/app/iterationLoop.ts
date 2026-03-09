@@ -27,8 +27,8 @@ export class IterationLoop {
     }
 
     private startInterval(fast: boolean) {
-        const wait = fast ? 100 : 800;
-        const iterationsAmount = fast ? 1 : 1;
+        const wait = fast ? 100 : 200;
+        const iterationsAmount = fast ? 5 : 1;
         this.playInterval = setInterval(() => {
             const continueLoop = this.iterations.execute(iterationsAmount);
             this.onUpdate();

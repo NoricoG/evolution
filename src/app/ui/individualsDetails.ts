@@ -1,6 +1,4 @@
-import { Individual } from "../individual.js";
-
-import { Brain } from "../genetics/brain.js";
+import { Individual } from "../../simulation/individual.js";
 
 export class IndividualsDetails {
     readonly individuals: Individual[];
@@ -21,22 +19,13 @@ export class IndividualsDetails {
         const eaten = this.individuals.filter(individual => individual.eaten);
         const starved = this.individuals.filter(individual => individual.starved);
 
-        const columnsWrapper = document.createElement("div");
-        columnsWrapper.className = "individuals-columns";
+        const wrapper = document.createElement("div");
 
-        const leftColumn = document.createElement("div");
-        leftColumn.className = "column";
-        this.appendCategory(leftColumn, `Alive`, alive, 8);
+        this.appendCategory(wrapper, `Alive`, alive, 4);
+        this.appendCategory(wrapper, `Eaten`, eaten, 2);
+        this.appendCategory(wrapper, `Starved`, starved, 2);
 
-        const rightColumn = document.createElement("div");
-        rightColumn.className = "column";
-        this.appendCategory(rightColumn, `Eaten`, eaten, 4);
-        this.appendCategory(rightColumn, `Starved`, starved, 4);
-
-
-        columnsWrapper.appendChild(leftColumn);
-        columnsWrapper.appendChild(rightColumn);
-        individualsDiv.appendChild(columnsWrapper);
+        individualsDiv.appendChild(wrapper);
     }
 
     private appendCategory(container: HTMLElement, category: string, individuals: Individual[], limit: number) {

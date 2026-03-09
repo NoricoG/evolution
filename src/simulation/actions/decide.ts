@@ -23,6 +23,8 @@ function decide(aOrB: number, actionA: Action, actionB: Action, state: State): A
 export class MainAction extends Action {
     readonly name = "Main";
 
+    chosenAction: Action | null = null;
+
     isPossible(state: State): boolean {
         return !this.individual.deathDay && this.individual.getAge(state.day) > 1;
     }
@@ -32,10 +34,10 @@ export class MainAction extends Action {
         const reproduceAction = new ReproduceAction(this.individual);
         const eatOrReproduce = this.individual.brain.eatOrReproduce.value;
 
-        const chosenAction = decide(eatOrReproduce, eatAction, reproduceAction, state) || new WaitAction(this.individual);
+        this.chosenAction = decide(eatOrReproduce, eatAction, reproduceAction, state) || new WaitAction(this.individual);
 
-        const gainedEnergy = chosenAction.execute(state);
-        this.individual.events.push(chosenAction.toString());
+        const gainedEnergy = this.chosenAction.execute(state);
+        this.individual.events.push(this.chosenAction.toString());
         return gainedEnergy;
     }
 

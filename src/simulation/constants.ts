@@ -1,9 +1,18 @@
 export class Constants {
+    static readonly foodAttempts = 9 + Math.round(Math.random() * 2);
+
     static readonly reproductiveAge = 2;
-
-    static readonly foodAttempts = 10;
-
     static readonly maxChildrenPerReproduction = 2;
+}
+
+export class EnvironmentConstants {
+    static readonly foodRegeneration = 15 + Math.round(Math.random() * 15);
+    static readonly preserveRemainingFood = 0.1 + Math.random() * 0.2;
+}
+
+export class GeneConstants {
+    static readonly shiftRange = 0.05 + Math.random() * 0.1;
+    static readonly geneFlipChance = 0.05 + Math.random() * 0.1;
 }
 
 export class EnergyConstants {

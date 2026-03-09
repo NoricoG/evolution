@@ -28,21 +28,14 @@ td {
     text-align: left;
 }
 
-.individuals-columns {
-    display: flex;
-    gap: 16px;
-    align-items: flex-start;
-}
-
-.column {
-    flex: 1;
-    min-width: 0;
-}
-
 #charts {
     display: flex;
     flex-wrap: wrap;
     gap: 16px;
+}
+
+.chart-pair {
+    padding-bottom: 32px;
 }
 
 .chart-container {

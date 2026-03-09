@@ -1,16 +1,13 @@
-import { Environment } from "./environment";
-import { Individual } from "./individual";
-import { State } from "./state";
-
-import { Chromosome } from "./genetics/chromosome";
-
+import { Environment } from "../../simulation/environment";
+import { Individual } from "../../simulation/individual";
+import { State } from "../../simulation/state";
 
 export class SimulationMetrics {
     dayMetrics: DayMetrics[] = [];
 
-    addDayMetrics(state: State) {
-        this.dayMetrics.push(new DayMetrics(state));
-        if (this.dayMetrics.length > 1000) {
+    addDayMetrics(state: State, actionMetrics: ActionMetrics) {
+        this.dayMetrics.push(new DayMetrics(state, actionMetrics));
+        if (this.dayMetrics.length > 500) {
             this.dayMetrics.shift();
         }
     }
@@ -25,8 +22,9 @@ export class DayMetrics {
     readonly offspring: OffspringMetrics;
     readonly genetics: GeneticsMetrics;
     readonly dietDistribution: DietDistributionMetrics;
+    readonly actions: ActionMetrics;
 
-    constructor(state: State) {
+    constructor(state: State, actionMetrics: ActionMetrics) {
         const living = state.individuals.filter(i => !i.deathDay);
         const dead = state.individuals.filter(i => i.deathDay);
 
@@ -38,6 +36,7 @@ export class DayMetrics {
         this.offspring = new OffspringMetrics(living);
         this.genetics = new GeneticsMetrics(state);
         this.dietDistribution = new DietDistributionMetrics(living);
+        this.actions = actionMetrics;
     }
 }
 
@@ -201,4 +200,13 @@ export class DietDistributionMetrics {
             }
         }
     }
+}
+
+export class ActionMetrics {
+    eatPlantSuccess = 0;
+    eatPlantFail = 0;
+    eatMeatSuccess = 0;
+    eatMeatFail = 0;
+    offspringCounts: number[] = [];
+    wait = 0;
 }

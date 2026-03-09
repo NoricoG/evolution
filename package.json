@@ -1,9 +1,9 @@
 {
     "name": "evolution",
     "scripts": {
-        "build": "tsc && esbuild src/ui/ui.ts --bundle --outfile=compiled/script.js",
+        "build": "tsc && esbuild src/app/ui/ui.ts --bundle --outfile=compiled/script.js",
         "typecheck": "tsc --watch",
-        "watch": "esbuild src/ui/ui.ts --bundle --outfile=compiled/script.js --watch",
+        "watch": "esbuild src/app/ui/ui.ts --bundle --outfile=compiled/script.js --watch",
         "test": "vitest"
     },
     "devDependencies": {

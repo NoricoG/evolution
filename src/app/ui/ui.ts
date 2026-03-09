@@ -1,7 +1,7 @@
 import { IndividualsDetails } from "./individualsDetails.js";
 
-import { State } from "../state.js";
-import { Charts } from "./charts.js";
+import { State } from "../../simulation/state.js";
+import { Charts } from "../charts/charts.js";
 import { Iterations } from "../iterations.js";
 import { IterationLoop } from "../iterationLoop.js";
 

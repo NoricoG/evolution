@@ -1,3 +1,5 @@
+import { EnvironmentConstants } from "./constants";
+
 export class Environment {
     uneatenFood: number;
     grownFood: number;
@@ -23,7 +25,7 @@ export class Environment {
         this.uneatenFood = this.remainingFood;
 
         const possibleGrowth = this.maxFood - this.uneatenFood;
-        this.grownFood = Math.round(this.uneatenFood + possibleGrowth / 2);
+        this.grownFood = Math.round(this.uneatenFood * EnvironmentConstants.preserveRemainingFood + EnvironmentConstants.foodRegeneration);
 
         this.remainingFood = this.grownFood;
     }
