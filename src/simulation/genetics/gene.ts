@@ -1,4 +1,4 @@
-import { GeneConstants } from "../constants";
+import { GeneConstants } from "../constants.js";
 
 export class Gene {
     // between 0 and 1 (inclusive)
@@ -22,8 +22,8 @@ export class Gene {
         return Math.round(this.value * 8) + 1;
     }
 
-    mutated(): Gene {
-        if (Math.random() < GeneConstants.geneFlipChance) {
+    mutated(invert: boolean): Gene {
+        if (invert && Math.random() < GeneConstants.geneInvertChance) {
             return this.inverted();
         } else {
             return this.shifted();
@@ -49,11 +49,10 @@ export class Gene {
     static difference(geneA: Gene, geneB: Gene): number {
         const a = geneA.toString();
         const b = geneB.toString();
-        if (a == "x" && b == "x") return 0;
-        if (a == "x" || b == "x") return 1;
 
         const numA = parseInt(a);
         const numB = parseInt(b);
+
         return Math.abs(numA - numB);
     }
 }

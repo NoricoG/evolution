@@ -1,5 +1,8 @@
 body {
     font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, "Liberation Mono", "DejaVu Sans Mono", "Courier New", monospace, Tahoma, sans-serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
 }
 
 p {
@@ -8,38 +11,37 @@ p {
 
 .big-button {
     padding: 10px 20px;
+    margin-bottom: 10px;
     font-size: 1em;
 }
 
-table {
-    border-collapse: collapse;
-    border: 2px solid #ccc;
-}
-
-th {
-    text-align: left;
-    background-color: #ababab;
-    padding: 8px;
-    font-weight: 600;
-}
-
-td {
-    padding: 8px;
-    text-align: left;
+h3 {
+    margin-bottom: 0;
 }
 
 #charts {
     display: flex;
-    flex-wrap: wrap;
+    flex-direction: column;
+    align-items: center;
     gap: 16px;
 }
 
-.chart-pair {
-    padding-bottom: 32px;
+.chart-section {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    align-items: flex-start;
+    gap: 8px 24px;
 }
 
-.chart-container {
+.chart-container.normal-chart {
     width: 400px;
     height: 300px;
+    position: relative;
+}
+
+.chart-container.small-chart {
+    width: 400px;
+    height: 200px;
     position: relative;
 }

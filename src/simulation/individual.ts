@@ -1,7 +1,8 @@
-import { Brain } from "./genetics/brain.js";
-
-import { Color } from "../utils/color.js";
-import { EnergyConstants } from "./constants.js";
+import { Color } from "@ui/color.js";
+import { EnergyConstants } from "@simulation/constants.js";
+import { Brain } from "@simulation/genetics/brain.js";
+import { Skills } from "@simulation/genetics/skills.js";
+import { Traits } from "@simulation/genetics/traits.js";
 
 export class Individual {
     id: string = "";  // assigned by state
@@ -10,8 +11,11 @@ export class Individual {
     deathDay: number | null = null;
     eaten: boolean = false;
     starved: boolean = false;
+    extraAlertness: number = 0;
 
     readonly brain: Brain;
+    readonly traits: Traits;
+    readonly skills: Skills;
 
     events: string[] = [];
 
@@ -19,12 +23,14 @@ export class Individual {
 
     children: Individual[] = [];
 
-    constructor(birthday: number, parent: Individual | null, brain: Brain) {
+    constructor(birthday: number, parent: Individual | null, brain: Brain, traits: Traits, skills: Skills) {
         this.birthday = birthday;
 
         this.parent = parent;
 
         this.brain = brain;
+        this.traits = traits;
+        this.skills = skills;
 
         this.energy = EnergyConstants.whenBorn;
     }
@@ -38,16 +44,22 @@ export class Individual {
     }
 
     getAge(today: number): number {
-        if (this.deathDay) {
+        if (this.deathDay != null) {
             return this.deathDay - this.birthday;
         }
         return today - this.birthday;
     }
 
-    createChild(today: number): Individual {
-        const evolvedBrain = this.brain.mutatedCopy();
+    static neutral(birthday: number): Individual {
+        return new Individual(birthday, null, Brain.neutral(), Traits.neutral(), Skills.neutral());
+    }
 
-        const baby = new Individual(today, this, evolvedBrain);
+    createChild(today: number): Individual {
+        const evolvedBrain = this.brain.mutatedCopy(true);
+        const evolvedTraits = this.traits.mutatedCopy(false);
+        const evolvedSkills = this.skills.mutatedCopy(false);
+
+        const baby = new Individual(today, this, evolvedBrain, evolvedTraits, evolvedSkills);
         this.children.push(baby);
 
         return baby;
@@ -69,7 +81,7 @@ export class Individual {
         // remove last generation which is empty
         offspring.pop();
 
-        const offSpringCounts = offspring.map(generation => generation.filter(individual => includeDead || !individual.deathDay).length);
+        const offSpringCounts = offspring.map(generation => generation.filter(individual => includeDead || individual.deathDay == null).length);
         if (offSpringCounts[offSpringCounts.length - 1] == 0) {
             offSpringCounts.pop();
         }
@@ -96,7 +108,7 @@ export class Individual {
                     break;
                 }
                 // stop when the next parent is dead, but include it in the list
-                if (nextParent.deathDay) {
+                if (nextParent.deathDay != null) {
                     parents.push(nextParent);
                     break;
                 }
@@ -123,21 +135,23 @@ export class Individual {
 
     private die(today: number) {
         this.deathDay = today;
-        // logEulogy(today);
     }
 
-    private logEulogy(today: number) {
-        let eulogy = `${this.id} died at age ${this.getAge(today)}`;
-        if (this.eaten) {
-            eulogy += " (eaten)";
+    // to clean up references to dead individuals
+    pruneDeadParents(deadGenerations: number = 0) {
+        let parent = this.parent;
+
+        if (parent == null) {
+            return;
+        } else if (parent.deathDay == null) {
+            parent.pruneDeadParents(0);
+        } else if (deadGenerations >= 2) {
+            // parent is long dead
+            this.parent = null;
+            // children are also dead
+            this.children = [];
+        } else {
+            parent.pruneDeadParents(deadGenerations + 1);
         }
-        if (this.starved) {
-            eulogy += " (starved)";
-        }
-        const showLastEvents = 5;
-        for (let i = Math.max(5, this.events.length) - showLastEvents; i < this.events.length; i++) {
-            eulogy += `\n${i + 1} ${this.events[i]}`;
-        }
-        console.log(eulogy);
     }
 }

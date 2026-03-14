@@ -8,6 +8,21 @@
         "module": "es2022",
         "moduleResolution": "bundler",
         "strict": true,
-        "noEmit": true
+        "noEmit": true,
+        "baseUrl": ".",
+        "paths": {
+            "@simulation/*": [
+                "src/simulation/*"
+            ],
+            "@app/*": [
+                "src/app/*"
+            ],
+            "@utils/*": [
+                "src/utils/*"
+            ],
+            "@ui/*": [
+                "src/ui/*"
+            ]
+        }
     }
 }

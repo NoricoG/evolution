@@ -1,23 +1,30 @@
 export class Constants {
-    static readonly foodAttempts = 9 + Math.round(Math.random() * 2);
+    static readonly findPlantAttempts = 6 + Math.round(Math.random() * 6);
+    static readonly huntAttempts = 3 + Math.round(Math.random() * 3);
 
     static readonly reproductiveAge = 2;
     static readonly maxChildrenPerReproduction = 2;
 }
 
 export class EnvironmentConstants {
-    static readonly foodRegeneration = 15 + Math.round(Math.random() * 15);
     static readonly preserveRemainingFood = 0.1 + Math.random() * 0.2;
+
+    static readonly minFoodRegeneration = 15 + Math.round(Math.random() * 15);
+    static readonly maxFoodRegeneration = 30 + Math.round(Math.random() * 20);
+
+    static readonly stepFoodRegeneration = 0.01 + Math.random() * 0.05;
 }
 
 export class GeneConstants {
-    static readonly shiftRange = 0.05 + Math.random() * 0.1;
-    static readonly geneFlipChance = 0.05 + Math.random() * 0.1;
+    static readonly shiftRange = 0.02 + Math.random() * 0.03;
+    static readonly geneInvertChance = 0.01 + Math.random() * 0.04;
+
+    static readonly learnImprovement = 0.01;
 }
 
 export class EnergyConstants {
     static readonly whenBorn = 3;
-    static readonly max = 5;
+    static readonly max = 7;
 
     // cost per turn, added to any action
     static readonly anyAction = -1;
@@ -25,6 +32,9 @@ export class EnergyConstants {
     // gain when eating
     static readonly eatPlantAction = 3;
     static readonly eatMeatAction = 3;
+
+    // no extra cost for learning
+    static readonly learnAction = 0;
 
     // buffer needed to reproduce, not spent but must be exceeded
     static readonly bufferForReproduction = 4;

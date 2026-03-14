@@ -1,154 +1,580 @@
 "use strict";
 (() => {
-  // src/app/ui/individualsDetails.ts
-  var IndividualsDetails = class {
-    individuals;
-    day;
-    constructor(individuals, day) {
-      this.individuals = individuals;
-      this.day = day;
+  // src/simulation/iterationLoop.ts
+  var IterationLoop = class {
+    iterations;
+    playInterval = void 0;
+    onUpdate = () => {
+    };
+    constructor(iterations) {
+      this.iterations = iterations;
     }
-    showIndividuals() {
-      if (this.individuals.length === 0) return;
-      const individualsDiv = document.getElementById("individuals");
-      individualsDiv.innerHTML = "";
-      const alive = this.individuals.filter((individual) => !individual.deathDay);
-      const eaten = this.individuals.filter((individual) => individual.eaten);
-      const starved = this.individuals.filter((individual) => individual.starved);
-      const wrapper = document.createElement("div");
-      this.appendCategory(wrapper, `Alive`, alive, 4);
-      this.appendCategory(wrapper, `Eaten`, eaten, 2);
-      this.appendCategory(wrapper, `Starved`, starved, 2);
-      individualsDiv.appendChild(wrapper);
+    playSlow() {
+      this.pause();
+      this.startInterval(false);
     }
-    appendCategory(container, category, individuals, limit2) {
-      const categoryTitle = document.createElement("h4");
-      categoryTitle.innerText = `${category} (top ${limit2} of ${individuals.length})`;
-      container.appendChild(categoryTitle);
-      if (individuals.length === 0) return;
-      this.sortIndividualsWithinCategory(individuals);
-      const individualsToShow = individuals.length > limit2 ? individuals.slice(0, limit2) : individuals;
-      const table = this.createTable(individualsToShow);
-      container.appendChild(table);
+    playFast() {
+      this.pause();
+      this.startInterval(true);
     }
-    valuesForIndividual(individual, includeDeath) {
-      if (!individual) {
-        console.error("Individual is undefined");
-        return {};
-      }
-      const values = {
-        "ID": individual.id,
-        "Age": individual.getAge(this.day).toString(),
-        [`Brain
-\u{1F37D}\uFE0F\u{1F476}`]: individual.brain.eatOrReproduce.toString(),
-        [`Diet
-\u{1F955}\u{1F969}`]: individual.brain.plantOrMeat.toString(),
-        "Action": individual.events[individual.events.length - 1] || "",
-        "Energy": this.energyLabel(individual.energy),
-        "Ancestors": this.ancestorLabel(individual),
-        "Offspring\nAlive": `${individual.getOffspringSum(false)}
-(${individual.getOffspringCounts(false).toString()})`,
-        "Offspring  \u25BC\nTotal": `${individual.getOffspringSum(true)}
-(${individual.getOffspringCounts(true).toString()})`
-      };
-      Object.entries(values).forEach(([key, value]) => {
-        if (value === void 0) {
-          console.error(`Value for ${key} is undefined for individual ${individual.id}`);
-          console.error(individual);
+    pause() {
+      clearInterval(this.playInterval);
+      this.playInterval = void 0;
+    }
+    startInterval(fast) {
+      const wait = fast ? 150 : 150;
+      const iterationsAmount = fast ? 50 : 5;
+      this.playInterval = setInterval(() => {
+        const continueLoop = this.iterations.execute(iterationsAmount);
+        this.onUpdate();
+        if (!continueLoop) {
+          this.pause();
         }
-      });
-      return values;
-    }
-    energyLabel(energy) {
-      const energyLabels = ["\u{1FAAB}", "\u{1F534}", "\u{1F7E0}", "\u{1F7E1}", "\u{1F7E2}"];
-      if (energy > energyLabels.length - 1) {
-        return energyLabels[energyLabels.length - 1];
-      }
-      if (energy < 0) {
-        return energyLabels[0];
-      }
-      return energyLabels[Math.round(energy)];
-    }
-    ancestorLabel(individual) {
-      const parents = individual.getParents();
-      parents.reverse();
-      if (parents.length === 0) {
-        return "x";
-      }
-      let parentString = parents.map((parent) => parent.id).join(" > ");
-      const oldestParent = parents[0];
-      if (oldestParent.deathDay) {
-        parentString = parentString.replace(oldestParent.id, `${oldestParent.id} \u2020 ${oldestParent.deathDay}`);
-      }
-      return parentString;
-    }
-    sortIndividualsWithinCategory(individuals) {
-      return individuals.sort((a, b) => {
-        if (a.deathDay && b.deathDay && a.deathDay != b.deathDay) {
-          return b.deathDay - a.deathDay;
-        }
-        return b.getOffspringSum(true) - a.getOffspringSum(true) || // age descending
-        b.getAge(this.day) - a.getAge(this.day) || // id ascending
-        a.id.localeCompare(b.id);
-      });
-    }
-    createTable(individuals) {
-      const table = document.createElement("table");
-      this.addHeader(table);
-      for (let individual of individuals) {
-        this.addIndividualRow(table, individual);
-      }
-      return table;
-    }
-    addHeader(table) {
-      const headerRow = document.createElement("tr");
-      const headers = Object.keys(this.valuesForIndividual(this.individuals[0], true));
-      headers.forEach((header) => {
-        const th = document.createElement("th");
-        th.innerText = header;
-        headerRow.appendChild(th);
-      });
-      table.appendChild(headerRow);
-    }
-    addIndividualRow(table, individual) {
-      const row = document.createElement("tr");
-      const values = this.valuesForIndividual(individual, true);
-      Object.values(values).forEach((value) => {
-        const td = document.createElement("td");
-        td.innerText = value.toString();
-        row.appendChild(td);
-      });
-      row.style.backgroundColor = individual.toColor();
-      table.appendChild(row);
+      }, wait);
     }
   };
 
   // src/simulation/constants.ts
   var Constants = class {
-    static foodAttempts = 9 + Math.round(Math.random() * 2);
+    static findPlantAttempts = 6 + Math.round(Math.random() * 6);
+    static huntAttempts = 3 + Math.round(Math.random() * 3);
     static reproductiveAge = 2;
     static maxChildrenPerReproduction = 2;
   };
   var EnvironmentConstants = class {
-    static foodRegeneration = 15 + Math.round(Math.random() * 15);
     static preserveRemainingFood = 0.1 + Math.random() * 0.2;
+    static minFoodRegeneration = 15 + Math.round(Math.random() * 15);
+    static maxFoodRegeneration = 30 + Math.round(Math.random() * 20);
+    static stepFoodRegeneration = 0.01 + Math.random() * 0.05;
   };
   var GeneConstants = class {
-    static shiftRange = 0.05 + Math.random() * 0.1;
-    static geneFlipChance = 0.05 + Math.random() * 0.1;
+    static shiftRange = 0.02 + Math.random() * 0.03;
+    static geneInvertChance = 0.01 + Math.random() * 0.04;
+    static learnImprovement = 0.01;
   };
   var EnergyConstants = class {
     static whenBorn = 3;
-    static max = 5;
+    static max = 7;
     // cost per turn, added to any action
     static anyAction = -1;
     // gain when eating
     static eatPlantAction = 3;
     static eatMeatAction = 3;
+    // no extra cost for learning
+    static learnAction = 0;
     // buffer needed to reproduce, not spent but must be exceeded
     static bufferForReproduction = 4;
     // energy spent per child when reproducing
     static reproductionPerChild = -1;
+  };
+
+  // src/simulation/actions/activity.ts
+  var Activity = class {
+    individual;
+    constructor(individual) {
+      this.individual = individual;
+    }
+  };
+  var Action = class extends Activity {
+  };
+  var Decision = class extends Activity {
+    decide(aOrB, activityA, activityB, state) {
+      const possibleA = activityA.isPossible(state);
+      const possibleB = activityB.isPossible(state);
+      if (possibleA && possibleB) {
+        return Math.random() < aOrB ? activityB : activityA;
+      } else if (possibleA) {
+        return activityA;
+      } else if (possibleB) {
+        return activityB;
+      } else {
+        return null;
+      }
+    }
+  };
+
+  // src/simulation/actions/action.ts
+  var WaitAction = class extends Action {
+    name = "Wait";
+    isPossible(state) {
+      return true;
+    }
+    execute(state) {
+      state.logAction(this, true);
+      return EnergyConstants.anyAction;
+    }
+    toString() {
+      return `\u{1F4A4}`;
+    }
+  };
+  var EatPlantAction = class extends Action {
+    name = "Herbivore";
+    succesful = false;
+    isPossible(state) {
+      return true;
+    }
+    execute(state) {
+      if (state.environment.remainingFood > 0) {
+        const findPlantSkill = this.individual.skills.findPlant.value;
+        let attempts = Math.round(Constants.findPlantAttempts * (1 - this.individual.traits.alertness.value));
+        if (attempts > state.environment.remainingFood) {
+          attempts = state.environment.remainingFood;
+        }
+        while (attempts > 0) {
+          attempts--;
+          const gatherSucces = Math.random() < findPlantSkill;
+          if (gatherSucces) {
+            this.succesful = true;
+            state.environment.remainingFood--;
+            state.logAction(this, this.succesful);
+            return EnergyConstants.anyAction + EnergyConstants.eatPlantAction;
+          }
+        }
+      }
+      this.succesful = false;
+      state.logAction(this, this.succesful);
+      return EnergyConstants.anyAction;
+    }
+    toString() {
+      return `\u{1F955} ${this.succesful ? "\u2714\uFE0F" : "\u274C"}`;
+    }
+  };
+  var EatMeatAction = class extends Action {
+    name = "Carnivore";
+    victim = null;
+    isPossible(state) {
+      return true;
+    }
+    isPossibleVictim(victim) {
+      if (victim.deathDay) {
+        return false;
+      }
+      if (victim.id === this.individual.id) {
+        return false;
+      }
+      if (victim.id === this.individual.parent?.id) {
+        return false;
+      }
+      if (victim.parent?.id === this.individual.id) {
+        return false;
+      }
+      return true;
+    }
+    execute(state) {
+      const hunterAdvantage = this.individual.skills.hunt.value + this.individual.traits.size.value;
+      let attempts = Math.round(Constants.huntAttempts * (1 - this.individual.traits.alertness.value));
+      if (attempts > state.individuals.length) {
+        attempts = state.individuals.length;
+      }
+      while (attempts > 0) {
+        attempts--;
+        let victim = state.individuals[Math.floor(Math.random() * state.individuals.length)];
+        if (!this.isPossibleVictim(victim)) {
+          continue;
+        }
+        const victimAdvantage = victim.traits.size.value + victim.traits.alertness.value + victim.extraAlertness;
+        const outcome = Math.random() * (hunterAdvantage + victimAdvantage);
+        const succes = outcome < hunterAdvantage;
+        if (succes) {
+          this.victim = victim;
+          victim.dieEaten(state.day, this.individual.id);
+          state.logAction(this, true);
+          return EnergyConstants.anyAction + EnergyConstants.eatMeatAction;
+        } else {
+          victim.extraAlertness++;
+        }
+      }
+      state.logAction(this, false);
+      return EnergyConstants.anyAction;
+    }
+    toString() {
+      let victimId = this.victim ? this.victim.id : "\u274C";
+      return `\u{1F969} ${victimId}`;
+    }
+  };
+  var LearnSkillAction = class extends Action {
+    name = "Learn";
+    isPossible(state) {
+      const hasEnergy = this.individual.energy > EnergyConstants.bufferForReproduction;
+      return hasEnergy;
+    }
+    execute(state) {
+      this.individual.skills.learnRandom();
+      state.logAction(this, true);
+      return EnergyConstants.anyAction + EnergyConstants.learnAction;
+    }
+    toString() {
+      return `\u{1F4DA}`;
+    }
+  };
+  var ReproduceAction = class extends Action {
+    name = "Reproduce";
+    cloneIds = [];
+    isPossible(state) {
+      const isAdult = this.individual.getAge(state.day) >= Constants.reproductiveAge;
+      const hasEnergy = this.individual.energy > EnergyConstants.bufferForReproduction;
+      return isAdult && hasEnergy;
+    }
+    execute(state) {
+      const spendableEnergyConstants = Math.floor(this.individual.energy - EnergyConstants.bufferForReproduction);
+      const numberOfChildren = Math.min(Constants.maxChildrenPerReproduction, spendableEnergyConstants);
+      for (let i = 0; i < numberOfChildren; i++) {
+        const baby = this.individual.createChild(state.day);
+        state.saveIndividual(baby);
+        this.cloneIds.push(baby.id);
+      }
+      state.logAction(this, numberOfChildren > 0);
+      return EnergyConstants.anyAction + EnergyConstants.reproductionPerChild * numberOfChildren;
+    }
+    toString() {
+      return `\u{1F476} ${this.cloneIds.join(" ")}`;
+    }
+  };
+
+  // src/simulation/actions/decision.ts
+  var MainDecision = class extends Decision {
+    name = "SurviveOrLearn";
+    isPossible(state) {
+      return !this.individual.deathDay && this.individual.getAge(state.day) > 1;
+    }
+    execute(state) {
+      const eatOrReproduceDecision = new EatOrReproduceDecision(this.individual);
+      const learnAction = new LearnSkillAction(this.individual);
+      const surviveOrLearn = this.individual.brain.surviveOrLearn.value;
+      const chosenActivity = this.decide(surviveOrLearn, eatOrReproduceDecision, learnAction, state) || new WaitAction(this.individual);
+      const gainedEnergy = chosenActivity.execute(state);
+      this.individual.events.push(chosenActivity.toString());
+      return gainedEnergy;
+    }
+    toString() {
+      return "";
+    }
+  };
+  var EatOrReproduceDecision = class extends Decision {
+    name = "EatOrReproduce";
+    chosenActivity = null;
+    isPossible(state) {
+      const canEat = this.individual.hasHunger();
+      const canReproduce = new ReproduceAction(this.individual).isPossible(state);
+      return canEat || canReproduce;
+    }
+    execute(state) {
+      const eatOrReproduce = this.individual.brain.eatOrReproduce.value;
+      this.chosenActivity = this.decide(
+        eatOrReproduce,
+        new PlantOrMeatDecision(this.individual),
+        new ReproduceAction(this.individual),
+        state
+      ) || new WaitAction(this.individual);
+      return this.chosenActivity.execute(state);
+    }
+    toString() {
+      return this.chosenActivity ? this.chosenActivity.toString() : "";
+    }
+  };
+  var PlantOrMeatDecision = class extends Decision {
+    name = "PlantOrMeat";
+    chosenAction = null;
+    isPossible(state) {
+      const hungry = this.individual.hasHunger();
+      const canEatPlant = new EatPlantAction(this.individual).isPossible(state);
+      const canEatMeat = new EatMeatAction(this.individual).isPossible(state);
+      return hungry && (canEatPlant || canEatMeat);
+    }
+    execute(state) {
+      const plantOrMeat = this.individual.brain.plantOrMeat.value;
+      this.chosenAction = this.decide(
+        plantOrMeat,
+        new EatPlantAction(this.individual),
+        new EatMeatAction(this.individual),
+        state
+      ) || new WaitAction(this.individual);
+      return this.chosenAction.execute(state);
+    }
+    toString() {
+      return this.chosenAction ? this.chosenAction.toString() : "";
+    }
+  };
+
+  // src/simulation/metrics.ts
+  var SimulationMetrics = class {
+    latestDayMetrics = new DayMetrics();
+    dayMetrics = [this.latestDayMetrics];
+    addnewDay() {
+      this.latestDayMetrics = new DayMetrics();
+      this.dayMetrics.push(this.latestDayMetrics);
+    }
+    flush() {
+      const flushed = this.dayMetrics;
+      this.dayMetrics = [];
+      return flushed;
+    }
+    logAction(action, succesful) {
+      this.latestDayMetrics.actions.logAction(action, succesful);
+    }
+    calculateRemainingMetrics(state) {
+      this.latestDayMetrics.calculateRemainingMetrics(state);
+    }
+  };
+  var DayMetrics = class {
+    day = 0;
+    population = new PopulationMetrics();
+    eatenStarved = new EatenStarvedMetrics();
+    food = new FoodMetrics();
+    age = new AgeMetrics();
+    offspring = new OffspringMetrics();
+    genetics = new GeneticsMetrics();
+    dietDistribution = new DietDistributionMetrics();
+    actions = new ActionMetrics();
+    logAction(action, succesful) {
+      this.actions.logAction(action, succesful);
+    }
+    calculateRemainingMetrics(state) {
+      const living = state.individuals.filter((i) => i.deathDay == null);
+      const dead = state.individuals.filter((i) => i.deathDay != null);
+      this.day = state.day;
+      this.population.calculate(state.day, state.individuals, living, dead);
+      this.eatenStarved.calculate(dead);
+      this.food.calculate(state.environment);
+      this.age.calculate(state.day, living, dead);
+      this.offspring.calculate(living);
+      this.genetics.calculate(state);
+      this.dietDistribution.calculate(living);
+    }
+  };
+  var PopulationMetrics = class {
+    alive = 0;
+    born = 0;
+    dead = 0;
+    calculate(day, all, living, dead) {
+      this.alive = living.length;
+      this.born = all.filter((i) => i.birthday === day).length;
+      this.dead = dead.length;
+    }
+  };
+  var EatenStarvedMetrics = class {
+    eaten = 0;
+    starved = 0;
+    eatenHerbivore = 0;
+    eatenOmnivore = 0;
+    eatenCarnivore = 0;
+    starvedHerbivore = 0;
+    starvedOmnivore = 0;
+    starvedCarnivore = 0;
+    calculate(dead) {
+      this.eaten = dead.filter((i) => i.eaten).length;
+      this.starved = dead.filter((i) => i.starved).length;
+      const herbivores = dead.filter((i) => i.brain.plantOrMeat.value < 1 / 3);
+      const omnivores = dead.filter((i) => i.brain.plantOrMeat.value >= 1 / 3 && i.brain.plantOrMeat.value <= 2 / 3);
+      const carnivores = dead.filter((i) => i.brain.plantOrMeat.value > 2 / 3);
+      this.eatenHerbivore = herbivores.filter((i) => i.eaten).length;
+      this.eatenOmnivore = omnivores.filter((i) => i.eaten).length;
+      this.eatenCarnivore = carnivores.filter((i) => i.eaten).length;
+      this.starvedOmnivore = omnivores.filter((i) => i.starved).length;
+      this.starvedHerbivore = herbivores.filter((i) => i.starved).length;
+      this.starvedCarnivore = carnivores.filter((i) => i.starved).length;
+    }
+  };
+  var FoodMetrics = class {
+    uneaten = 0;
+    grown = 0;
+    remaining = 0;
+    calculate(environment) {
+      this.uneaten = environment.uneatenFood;
+      this.grown = environment.grownFood;
+      this.remaining = environment.remainingFood;
+    }
+  };
+  var AgeMetrics = class {
+    averageLiving = null;
+    oldest = null;
+    averageDeath = null;
+    oldestDeath = null;
+    calculate(day, living, dead) {
+      if (living.length > 0) {
+        const ages = living.map((i) => i.getAge(day));
+        const sortedAges = [...ages].sort((a, b) => b - a);
+        this.averageLiving = ages.reduce((a, b) => a + b, 0) / ages.length;
+        this.oldest = sortedAges[0];
+      } else {
+        this.averageLiving = null;
+        this.oldest = null;
+      }
+      if (dead.length > 0) {
+        const deathAges = dead.map((i) => i.getAge(day));
+        this.averageDeath = deathAges.reduce((a, b) => a + b, 0) / deathAges.length;
+        this.oldestDeath = Math.max(...deathAges);
+      } else {
+        this.averageDeath = null;
+        this.oldestDeath = null;
+      }
+    }
+  };
+  var OffspringMetrics = class {
+    averageAlive = null;
+    averageTotal = null;
+    maxAlive = null;
+    maxTotal = null;
+    calculate(living) {
+      if (living.length > 0) {
+        const aliveOffspring = living.map((i) => i.getOffspringSum(false));
+        const totalOffspring = living.map((i) => i.getOffspringSum(true));
+        this.averageAlive = aliveOffspring.reduce((a, b) => a + b, 0) / aliveOffspring.length;
+        this.averageTotal = totalOffspring.reduce((a, b) => a + b, 0) / totalOffspring.length;
+        this.maxAlive = Math.max(...aliveOffspring);
+        this.maxTotal = Math.max(...totalOffspring);
+      } else {
+        this.averageAlive = null;
+        this.averageTotal = null;
+        this.maxAlive = null;
+        this.maxTotal = null;
+      }
+    }
+  };
+  var GeneticsMetrics = class {
+    surviveOrLearn = new GeneMetrics();
+    eatOrReproduce = new GeneMetrics();
+    plantOrMeat = new GeneMetrics();
+    findPlantSkill = new GeneMetrics();
+    huntSkill = new GeneMetrics();
+    alertnessTrait = new GeneMetrics();
+    sizeTrait = new GeneMetrics();
+    calculate(state) {
+      this.surviveOrLearn.calculate(state.individuals.map((i) => i.brain.surviveOrLearn.bucket));
+      this.eatOrReproduce.calculate(state.individuals.map((i) => i.brain.eatOrReproduce.bucket));
+      this.plantOrMeat.calculate(state.individuals.map((i) => i.brain.plantOrMeat.bucket));
+      this.findPlantSkill.calculate(state.individuals.map((i) => i.skills.findPlant.bucket));
+      this.huntSkill.calculate(state.individuals.map((i) => i.skills.hunt.bucket));
+      this.alertnessTrait.calculate(state.individuals.map((i) => i.traits.alertness.bucket));
+      this.sizeTrait.calculate(state.individuals.map((i) => i.traits.size.bucket));
+    }
+  };
+  var GeneMetrics = class {
+    counts = [];
+    calculate(buckets) {
+      this.counts = [];
+      for (let i = 1; i <= 9; i++) {
+        this.counts.push(0);
+      }
+      for (const bucket of buckets) {
+        this.counts[bucket - 1]++;
+      }
+    }
+  };
+  var DietDistributionMetrics = class {
+    bucketCounts = [];
+    calculate(living) {
+      this.bucketCounts = [];
+      for (let i = 0; i < 9; i++) {
+        this.bucketCounts[i] = 0;
+      }
+      for (const individual of living) {
+        const bucket = individual.brain.plantOrMeat.bucket;
+        this.bucketCounts[bucket - 1]++;
+      }
+    }
+  };
+  var ActionMetrics = class {
+    wait = 0;
+    learn = 0;
+    survive = 0;
+    reproduce = 0;
+    offspringCounts = [];
+    eat = 0;
+    eatPlant = 0;
+    eatMeat = 0;
+    eatPlantSuccess = 0;
+    eatPlantFail = 0;
+    eatMeatSuccess = 0;
+    eatMeatFail = 0;
+    logAction(action, succesful) {
+      if (action instanceof WaitAction) {
+        this.wait++;
+      } else if (action instanceof LearnSkillAction) {
+        this.learn++;
+      } else {
+        this.survive++;
+        if (action instanceof ReproduceAction) {
+          this.reproduce++;
+          this.offspringCounts.push(action.cloneIds.length);
+        } else if (action instanceof EatPlantAction) {
+          this.eat++;
+          this.eatPlant++;
+          if (succesful) {
+            this.eatPlantSuccess++;
+          } else {
+            this.eatPlantFail++;
+          }
+        } else if (action instanceof EatMeatAction) {
+          this.eat++;
+          this.eatMeat++;
+          if (succesful) {
+            this.eatMeatSuccess++;
+          } else {
+            this.eatMeatFail++;
+          }
+        }
+      }
+    }
+  };
+
+  // src/simulation/iterations.ts
+  var Iterations = class {
+    state;
+    constructor(state) {
+      this.state = state;
+    }
+    execute(iterations) {
+      for (let i = 0; i < iterations; i++) {
+        this.state.archiveDeadIndividuals();
+        this.state.metrics.addnewDay();
+        this.state.day++;
+        this.state.updateEnvironment();
+        for (const individual of this.state.individuals) {
+          individual.extraAlertness = 0;
+        }
+        const actionMetrics = this.actAllIndividuals();
+        this.starveIndividuals();
+        this.state.metrics.calculateRemainingMetrics(this.state);
+        const allDead = this.state.individuals.filter((individual) => individual.deathDay == null).length == 0;
+        if (allDead) {
+          const anyDiedToday = this.state.individuals.filter((individual) => individual.deathDay == this.state.day).length > 0;
+          if (anyDiedToday) {
+            alert("All individuals have died. Reload the page for a new simulation.");
+          }
+          return false;
+        }
+      }
+      return true;
+    }
+    actAllIndividuals() {
+      const actionMetrics = new ActionMetrics();
+      const individuals = this.state.individuals;
+      for (let i = individuals.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [individuals[i], individuals[j]] = [individuals[j], individuals[i]];
+      }
+      for (const individual of individuals) {
+        const mainDecision = new MainDecision(individual);
+        if (mainDecision.isPossible(this.state)) {
+          const gainedEnergy = mainDecision.execute(this.state);
+          individual.energy += gainedEnergy;
+          if (individual.energy > EnergyConstants.max) {
+            individual.energy = EnergyConstants.max;
+          }
+        }
+      }
+      return actionMetrics;
+    }
+    starveIndividuals() {
+      let starvedIndividuals = 0;
+      for (let individual of this.state.individuals) {
+        if (individual.energy <= 0 && individual.deathDay == null && individual.getAge(this.state.day) > 0) {
+          individual.dieStarved(this.state.day);
+          starvedIndividuals++;
+        }
+      }
+    }
   };
 
   // src/simulation/environment.ts
@@ -156,43 +582,71 @@
     uneatenFood;
     grownFood;
     remainingFood;
+    foodRegeneration;
+    foodRegenerationIncreasing;
     maxFood;
     constructor(maxFood) {
       this.maxFood = maxFood;
       this.uneatenFood = -1;
       this.grownFood = -1;
       this.remainingFood = 0;
+      this.foodRegeneration = Math.random() * (EnvironmentConstants.maxFoodRegeneration - EnvironmentConstants.minFoodRegeneration) + EnvironmentConstants.minFoodRegeneration;
+      this.foodRegenerationIncreasing = Math.random() < 0.5;
       this.nextDay();
     }
     toFoodString() {
       return `${this.uneatenFood} -> ${this.grownFood} -> ${this.remainingFood}`;
     }
+    updateSeason() {
+      this.foodRegeneration += this.foodRegenerationIncreasing ? EnvironmentConstants.stepFoodRegeneration : -EnvironmentConstants.stepFoodRegeneration;
+      if (this.foodRegeneration > EnvironmentConstants.maxFoodRegeneration) {
+        this.foodRegeneration = EnvironmentConstants.maxFoodRegeneration;
+        this.foodRegenerationIncreasing = false;
+      } else if (this.foodRegeneration < EnvironmentConstants.minFoodRegeneration) {
+        this.foodRegeneration = EnvironmentConstants.minFoodRegeneration;
+        this.foodRegenerationIncreasing = true;
+      }
+    }
     nextDay() {
       this.uneatenFood = this.remainingFood;
-      const possibleGrowth = this.maxFood - this.uneatenFood;
-      this.grownFood = Math.round(this.uneatenFood * EnvironmentConstants.preserveRemainingFood + EnvironmentConstants.foodRegeneration);
+      this.grownFood = Math.round(this.uneatenFood * EnvironmentConstants.preserveRemainingFood + this.foodRegeneration);
+      this.updateSeason();
       this.remainingFood = this.grownFood;
     }
   };
 
-  // src/utils/color.ts
+  // src/ui/color.ts
   var Color = class _Color {
-    // diet: lighter, hue-shifted
-    static herbivore = "rgb(22, 163, 74)";
+    static green = "rgb(22, 163, 74)";
     // green-600
-    static omnivore = "rgb(37, 99, 235)";
+    static blue = "rgb(37, 99, 235)";
     // blue-600
-    static carnivore = "rgb(220, 38, 38)";
+    static red = "rgb(220, 38, 38)";
     // red-600
-    // impact: deep, saturated hues
-    static good = "rgb(52, 211, 153)";
+    static greenTeal = "rgb(52, 211, 153)";
     // emerald-400 (teal-green)
-    static neutral = "rgb(100, 116, 139)";
-    // slate-500
-    static bad = "rgb(251, 113, 133)";
+    static blueSky = "rgb(56, 189, 248)";
+    // sky-400 (sky-blue)
+    static redPink = "rgb(251, 113, 133)";
     // rose-400 (pink-red)
-    static plantOrMeat = this.omnivore;
-    static eatOrReproduce = this.neutral;
+    static purple = "rgb(167, 139, 250)";
+    // violet-400
+    static greenHue = 140 / 360;
+    static blueHue = 220 / 360;
+    static redHue = 0 / 360;
+    static purpleHue = 270 / 360;
+    static orangeHue = 30 / 360;
+    static yellowHue = 55 / 360;
+    static defaultSaturation = 1;
+    static greenToRedRange = this.hueRange(this.greenHue, this.redHue, 9, 0.9, 0.4);
+    static hueRange(fromHue, toHue, steps2, saturation, luminance) {
+      return Array.from({ length: steps2 }, (_, i) => {
+        const huePerStep = steps2 > 1 ? i / (steps2 - 1) : 0;
+        const hue2 = fromHue + huePerStep * (toHue - fromHue);
+        const [r, g, b] = _Color.hslToRgb(hue2, saturation, luminance);
+        return `rgb(${r}, ${g}, ${b})`;
+      });
+    }
     static rgbToRgba(rgb, alpha2) {
       return rgb.replace("rgb(", "rgba(").replace(")", `, ${alpha2.toFixed(2)})`);
     }
@@ -210,11 +664,165 @@
       const maxValue = 0.9;
       const clampedHerbivoreValue = Math.min(maxValue, Math.max(minValue, herbivoreValue));
       const hue2 = (clampedHerbivoreValue - minValue) / (maxValue - minValue) * 130;
-      const eatValue = 1 - brain.eatOrReproduce.value;
+      const eatValue = 1 - brain.surviveOrLearn.value;
       const saturation = 0.5 + eatValue / 2;
       const lightness = 0.6;
       const [r, g, b] = _Color.hslToRgb(hue2 / 360, saturation, lightness);
       return `rgb(${r}, ${g}, ${b})`;
+    }
+  };
+
+  // src/simulation/genetics/gene.ts
+  var Gene = class _Gene {
+    // between 0 and 1 (inclusive)
+    value;
+    constructor(value) {
+      this.value = value;
+    }
+    static random() {
+      const randomValue = Math.random();
+      return new _Gene(randomValue);
+    }
+    toString() {
+      return this.bucket.toString();
+    }
+    get bucket() {
+      return Math.round(this.value * 8) + 1;
+    }
+    mutated(invert) {
+      if (invert && Math.random() < GeneConstants.geneInvertChance) {
+        return this.inverted();
+      } else {
+        return this.shifted();
+      }
+    }
+    inverted() {
+      return new _Gene(1 - this.value);
+    }
+    shifted() {
+      const shift = Math.random() * GeneConstants.shiftRange - GeneConstants.shiftRange / 2;
+      let shifted = this.value + shift;
+      if (shifted < 0) {
+        shifted = 0;
+      }
+      if (shifted > 1) {
+        shifted = 1;
+      }
+      return new _Gene(shifted);
+    }
+    static difference(geneA, geneB) {
+      const a = geneA.toString();
+      const b = geneB.toString();
+      const numA = parseInt(a);
+      const numB = parseInt(b);
+      return Math.abs(numA - numB);
+    }
+  };
+
+  // src/simulation/genetics/chromosome.ts
+  var Chromosome = class {
+    static geneKeys = [];
+    genes;
+    constructor(genes) {
+      this.genes = genes;
+    }
+    toString() {
+      return Object.keys(this.genes).map((key) => this.genes[key].toString()).join("");
+    }
+    mutatedCopy(invert) {
+      const newGenes = {};
+      for (const key of Object.keys(this.genes)) {
+        newGenes[key] = this.genes[key].mutated(invert);
+      }
+      return new this.constructor(newGenes);
+    }
+    static similar(chromosomeA, chromosomeB, maxTotalSteps) {
+      let totalSteps = 0;
+      for (const key of Object.keys(chromosomeA.genes)) {
+        const geneA = chromosomeA.genes[key];
+        const geneB = chromosomeB.genes[key];
+        totalSteps += Gene.difference(geneA, geneB);
+      }
+      return totalSteps <= maxTotalSteps;
+    }
+  };
+
+  // src/simulation/genetics/brain.ts
+  var BrainGenes = /* @__PURE__ */ ((BrainGenes2) => {
+    BrainGenes2["SurviveOrLearn"] = "SurviveOrLearn";
+    BrainGenes2["EatOrReproduce"] = "EatOrReproduce";
+    BrainGenes2["PlantOrMeat"] = "PlantOrMeat";
+    return BrainGenes2;
+  })(BrainGenes || {});
+  var Brain = class _Brain extends Chromosome {
+    static geneKeys = Object.values(BrainGenes);
+    static neutral() {
+      const neutralGenes = {};
+      neutralGenes["SurviveOrLearn" /* SurviveOrLearn */] = new Gene(1 / 9);
+      neutralGenes["PlantOrMeat" /* PlantOrMeat */] = new Gene(3 / 9);
+      neutralGenes["EatOrReproduce" /* EatOrReproduce */] = new Gene(3 / 9);
+      return new _Brain(neutralGenes);
+    }
+    get surviveOrLearn() {
+      return this.genes["SurviveOrLearn" /* SurviveOrLearn */];
+    }
+    get plantOrMeat() {
+      return this.genes["PlantOrMeat" /* PlantOrMeat */];
+    }
+    get eatOrReproduce() {
+      return this.genes["EatOrReproduce" /* EatOrReproduce */];
+    }
+  };
+
+  // src/simulation/genetics/skills.ts
+  var SkillsGenes = /* @__PURE__ */ ((SkillsGenes2) => {
+    SkillsGenes2["FindPlant"] = "FindPlant";
+    SkillsGenes2["Hunt"] = "Hunt";
+    return SkillsGenes2;
+  })(SkillsGenes || {});
+  var Skills = class _Skills extends Chromosome {
+    static geneKeys = Object.values(SkillsGenes);
+    static neutral() {
+      const genes = {};
+      genes["FindPlant" /* FindPlant */] = new Gene(2 / 9);
+      genes["Hunt" /* Hunt */] = new Gene(1 / 9);
+      return new _Skills(genes);
+    }
+    learnRandom() {
+      const randomKey = _Skills.geneKeys[Math.floor(Math.random() * _Skills.geneKeys.length)];
+      let newValue = this.genes[randomKey].value + GeneConstants.learnImprovement;
+      if (newValue > 1) {
+        newValue = 1;
+      }
+      this.genes[randomKey] = new Gene(newValue);
+    }
+    get findPlant() {
+      return this.genes["FindPlant" /* FindPlant */];
+    }
+    get hunt() {
+      return this.genes["Hunt" /* Hunt */];
+    }
+  };
+
+  // src/simulation/genetics/traits.ts
+  var TraitGenes = /* @__PURE__ */ ((TraitGenes2) => {
+    TraitGenes2["Alertness"] = "Alertness";
+    TraitGenes2["Size"] = "Size";
+    return TraitGenes2;
+  })(TraitGenes || {});
+  var Traits = class _Traits extends Chromosome {
+    static geneKeys = Object.values(TraitGenes);
+    static neutral() {
+      const genes = {};
+      genes["Alertness" /* Alertness */] = new Gene(1 / 9);
+      genes["Size" /* Size */] = new Gene(1 / 9);
+      return new _Traits(genes);
+    }
+    get alertness() {
+      return this.genes["Alertness" /* Alertness */];
+    }
+    get size() {
+      return this.genes["Size" /* Size */];
     }
   };
 
@@ -227,14 +835,19 @@
     deathDay = null;
     eaten = false;
     starved = false;
+    extraAlertness = 0;
     brain;
+    traits;
+    skills;
     events = [];
     energy;
     children = [];
-    constructor(birthday, parent, brain) {
+    constructor(birthday, parent, brain, traits, skills) {
       this.birthday = birthday;
       this.parent = parent;
       this.brain = brain;
+      this.traits = traits;
+      this.skills = skills;
       this.energy = EnergyConstants.whenBorn;
     }
     toString() {
@@ -244,14 +857,19 @@
       return Color.genomeToColor(this.brain);
     }
     getAge(today) {
-      if (this.deathDay) {
+      if (this.deathDay != null) {
         return this.deathDay - this.birthday;
       }
       return today - this.birthday;
     }
+    static neutral(birthday) {
+      return new _Individual(birthday, null, Brain.neutral(), Traits.neutral(), Skills.neutral());
+    }
     createChild(today) {
-      const evolvedBrain = this.brain.mutatedCopy();
-      const baby = new _Individual(today, this, evolvedBrain);
+      const evolvedBrain = this.brain.mutatedCopy(true);
+      const evolvedTraits = this.traits.mutatedCopy(false);
+      const evolvedSkills = this.skills.mutatedCopy(false);
+      const baby = new _Individual(today, this, evolvedBrain, evolvedTraits, evolvedSkills);
       this.children.push(baby);
       return baby;
     }
@@ -267,7 +885,7 @@
         generation++;
       }
       offspring.pop();
-      const offSpringCounts = offspring.map((generation2) => generation2.filter((individual) => includeDead || !individual.deathDay).length);
+      const offSpringCounts = offspring.map((generation2) => generation2.filter((individual) => includeDead || individual.deathDay == null).length);
       if (offSpringCounts[offSpringCounts.length - 1] == 0) {
         offSpringCounts.pop();
       }
@@ -287,7 +905,7 @@
           if (nextParent == null) {
             break;
           }
-          if (nextParent.deathDay) {
+          if (nextParent.deathDay != null) {
             parents.push(nextParent);
             break;
           }
@@ -311,124 +929,23 @@
     die(today) {
       this.deathDay = today;
     }
-    logEulogy(today) {
-      let eulogy = `${this.id} died at age ${this.getAge(today)}`;
-      if (this.eaten) {
-        eulogy += " (eaten)";
-      }
-      if (this.starved) {
-        eulogy += " (starved)";
-      }
-      const showLastEvents = 5;
-      for (let i = Math.max(5, this.events.length) - showLastEvents; i < this.events.length; i++) {
-        eulogy += `
-${i + 1} ${this.events[i]}`;
-      }
-      console.log(eulogy);
-    }
-  };
-
-  // src/simulation/genetics/gene.ts
-  var Gene = class _Gene {
-    // between 0 and 1 (inclusive)
-    value;
-    constructor(value) {
-      this.value = value;
-    }
-    static random() {
-      const randomValue = Math.random();
-      return new _Gene(randomValue);
-    }
-    toString() {
-      return this.bucket.toString();
-    }
-    get bucket() {
-      return Math.round(this.value * 8) + 1;
-    }
-    mutated() {
-      if (Math.random() < GeneConstants.geneFlipChance) {
-        return this.inverted();
+    // to clean up references to dead individuals
+    pruneDeadParents(deadGenerations = 0) {
+      let parent = this.parent;
+      if (parent == null) {
+        return;
+      } else if (parent.deathDay == null) {
+        parent.pruneDeadParents(0);
+      } else if (deadGenerations >= 2) {
+        this.parent = null;
+        this.children = [];
       } else {
-        return this.shifted();
+        parent.pruneDeadParents(deadGenerations + 1);
       }
-    }
-    inverted() {
-      return new _Gene(1 - this.value);
-    }
-    shifted() {
-      const shift = Math.random() * GeneConstants.shiftRange - GeneConstants.shiftRange / 2;
-      let shifted = this.value + shift;
-      if (shifted < 0) {
-        shifted = 0;
-      }
-      if (shifted > 1) {
-        shifted = 1;
-      }
-      return new _Gene(shifted);
-    }
-    static difference(geneA, geneB) {
-      const a = geneA.toString();
-      const b = geneB.toString();
-      if (a == "x" && b == "x") return 0;
-      if (a == "x" || b == "x") return 1;
-      const numA = parseInt(a);
-      const numB = parseInt(b);
-      return Math.abs(numA - numB);
     }
   };
 
-  // src/simulation/genetics/chromosome.ts
-  var Chromosome = class {
-    static geneKeys = [];
-    genes;
-    constructor(genes) {
-      this.genes = genes;
-    }
-    toString() {
-      return Object.keys(this.genes).map((key) => this.genes[key].toString()).join("");
-    }
-    mutatedCopy() {
-      const newGenes = {};
-      for (const key of Object.keys(this.genes)) {
-        newGenes[key] = this.genes[key].mutated();
-      }
-      return new this.constructor(newGenes);
-    }
-    static similar(chromosomeA, chromosomeB, maxTotalSteps) {
-      let totalSteps = 0;
-      for (const key of Object.keys(chromosomeA.genes)) {
-        const geneA = chromosomeA.genes[key];
-        const geneB = chromosomeB.genes[key];
-        totalSteps += Gene.difference(geneA, geneB);
-      }
-      return totalSteps <= maxTotalSteps;
-    }
-  };
-
-  // src/simulation/genetics/brain.ts
-  var BrainGenes = /* @__PURE__ */ ((BrainGenes2) => {
-    BrainGenes2["EatOrReproduce"] = "EatOrReproduce";
-    BrainGenes2["PlantOrMeat"] = "PlantOrMeat";
-    return BrainGenes2;
-  })(BrainGenes || {});
-  var Brain = class _Brain extends Chromosome {
-    static geneKeys = Object.values(BrainGenes);
-    static neutral() {
-      const neutralGenes = {};
-      for (const key of _Brain.geneKeys) {
-        neutralGenes[key] = new Gene(0.5);
-      }
-      return new _Brain(neutralGenes);
-    }
-    get eatOrReproduce() {
-      return this.genes["EatOrReproduce" /* EatOrReproduce */];
-    }
-    get plantOrMeat() {
-      return this.genes["PlantOrMeat" /* PlantOrMeat */];
-    }
-  };
-
-  // src/utils/name.ts
+  // src/simulation/name.ts
   function intToName(num) {
     const consonants = "bcdfghjklmnpqrstvwxyz";
     const vowels = "aeiou";
@@ -440,181 +957,6 @@ ${i + 1} ${this.events[i]}`;
     const name = consonants[firstIdx].toUpperCase() + vowels[vowelIdx] + consonants[lastIdx];
     return name;
   }
-
-  // src/app/charts/metrics.ts
-  var SimulationMetrics = class {
-    dayMetrics = [];
-    addDayMetrics(state, actionMetrics) {
-      this.dayMetrics.push(new DayMetrics(state, actionMetrics));
-      if (this.dayMetrics.length > 500) {
-        this.dayMetrics.shift();
-      }
-    }
-  };
-  var DayMetrics = class {
-    day;
-    population;
-    eatenStarved;
-    food;
-    age;
-    offspring;
-    genetics;
-    dietDistribution;
-    actions;
-    constructor(state, actionMetrics) {
-      const living = state.individuals.filter((i) => !i.deathDay);
-      const dead = state.individuals.filter((i) => i.deathDay);
-      this.day = state.day;
-      this.population = new PopulationMetrics(state.day, state.individuals, living, dead);
-      this.eatenStarved = new EatenStarvedMetrics(dead);
-      this.food = new FoodMetrics(state.environment);
-      this.age = new AgeMetrics(state.day, living, dead);
-      this.offspring = new OffspringMetrics(living);
-      this.genetics = new GeneticsMetrics(state);
-      this.dietDistribution = new DietDistributionMetrics(living);
-      this.actions = actionMetrics;
-    }
-  };
-  var PopulationMetrics = class {
-    alive;
-    born;
-    dead;
-    constructor(day, all, living, dead) {
-      this.alive = living.length;
-      this.born = all.filter((i) => i.birthday === day).length;
-      this.dead = dead.length;
-    }
-  };
-  var EatenStarvedMetrics = class {
-    eaten;
-    starved;
-    eatenHerbivore;
-    eatenOmnivore;
-    eatenCarnivore;
-    starvedHerbivore;
-    starvedOmnivore;
-    starvedCarnivore;
-    constructor(dead) {
-      this.eaten = dead.filter((i) => i.eaten).length;
-      this.starved = dead.filter((i) => i.starved).length;
-      const herbivores = dead.filter((i) => i.brain.plantOrMeat.value < 1 / 3);
-      const omnivores = dead.filter((i) => i.brain.plantOrMeat.value >= 1 / 3 && i.brain.plantOrMeat.value <= 2 / 3);
-      const carnivores = dead.filter((i) => i.brain.plantOrMeat.value > 2 / 3);
-      this.eatenHerbivore = herbivores.filter((i) => i.eaten).length;
-      this.eatenOmnivore = omnivores.filter((i) => i.eaten).length;
-      this.eatenCarnivore = carnivores.filter((i) => i.eaten).length;
-      this.starvedOmnivore = omnivores.filter((i) => i.starved).length;
-      this.starvedHerbivore = herbivores.filter((i) => i.starved).length;
-      this.starvedCarnivore = carnivores.filter((i) => i.starved).length;
-    }
-  };
-  var FoodMetrics = class {
-    uneaten;
-    grown;
-    remaining;
-    constructor(environment) {
-      this.uneaten = environment.uneatenFood;
-      this.grown = environment.grownFood;
-      this.remaining = environment.remainingFood;
-    }
-  };
-  var AgeMetrics = class {
-    averageLiving;
-    oldest;
-    averageDeath;
-    oldestDeath;
-    constructor(day, living, dead) {
-      if (living.length > 0) {
-        const ages = living.map((i) => i.getAge(day));
-        const sortedAges = [...ages].sort((a, b) => b - a);
-        this.averageLiving = ages.reduce((a, b) => a + b, 0) / ages.length;
-        this.oldest = sortedAges[0];
-      } else {
-        this.averageLiving = null;
-        this.oldest = null;
-      }
-      if (dead.length > 0) {
-        const deathAges = dead.map((i) => i.getAge(day));
-        this.averageDeath = deathAges.reduce((a, b) => a + b, 0) / deathAges.length;
-        this.oldestDeath = Math.max(...deathAges);
-      } else {
-        this.averageDeath = null;
-        this.oldestDeath = null;
-      }
-    }
-  };
-  var OffspringMetrics = class {
-    averageAlive;
-    averageTotal;
-    maxAlive;
-    maxTotal;
-    constructor(living) {
-      if (living.length > 0) {
-        const aliveOffspring = living.map((i) => i.getOffspringSum(false));
-        const totalOffspring = living.map((i) => i.getOffspringSum(true));
-        this.averageAlive = aliveOffspring.reduce((a, b) => a + b, 0) / aliveOffspring.length;
-        this.averageTotal = totalOffspring.reduce((a, b) => a + b, 0) / totalOffspring.length;
-        this.maxAlive = Math.max(...aliveOffspring);
-        this.maxTotal = Math.max(...totalOffspring);
-      } else {
-        this.averageAlive = null;
-        this.averageTotal = null;
-        this.maxAlive = null;
-        this.maxTotal = null;
-      }
-    }
-  };
-  var GeneticsMetrics = class {
-    eatOrReproduce;
-    plantOrMeat;
-    constructor(state) {
-      this.eatOrReproduce = new GeneMetrics(state.individuals.map((i) => i.brain.eatOrReproduce.bucket));
-      this.plantOrMeat = new GeneMetrics(state.individuals.map((i) => i.brain.plantOrMeat.bucket));
-    }
-  };
-  var GeneMetrics = class {
-    counts;
-    constructor(buckets) {
-      this.counts = [];
-      for (let i = 1; i <= 9; i++) {
-        this.counts.push(0);
-      }
-      for (const bucket of buckets) {
-        this.counts[bucket - 1]++;
-      }
-    }
-  };
-  var DietDistributionMetrics = class {
-    herbivore;
-    omnivore;
-    carnivore;
-    constructor(living) {
-      this.herbivore = 0;
-      this.omnivore = 0;
-      this.carnivore = 0;
-      if (living.length === 0) {
-        return;
-      }
-      for (const individual of living) {
-        const amountCarnivore = individual.brain.plantOrMeat.value;
-        if (amountCarnivore < 1 / 3) {
-          this.herbivore++;
-        } else if (amountCarnivore > 2 / 3) {
-          this.carnivore++;
-        } else {
-          this.omnivore++;
-        }
-      }
-    }
-  };
-  var ActionMetrics = class {
-    eatPlantSuccess = 0;
-    eatPlantFail = 0;
-    eatMeatSuccess = 0;
-    eatMeatFail = 0;
-    offspringCounts = [];
-    wait = 0;
-  };
 
   // src/simulation/state.ts
   var State = class {
@@ -631,13 +973,13 @@ ${i + 1} ${this.events[i]}`;
     }
     createInitialIndividuals() {
       const firstIndividuals = [
-        new Individual(this.day, null, Brain.neutral()),
-        new Individual(this.day, null, Brain.neutral())
+        Individual.neutral(this.day),
+        Individual.neutral(this.day),
+        Individual.neutral(this.day)
       ];
       for (const individual of firstIndividuals) {
         this.saveIndividual(individual);
       }
-      this.metrics.addDayMetrics(this, new ActionMetrics());
     }
     nextIndividualId() {
       this.individualIdCounter++;
@@ -652,33 +994,20 @@ ${i + 1} ${this.events[i]}`;
       this.environment.nextDay();
     }
     livingIndividualCount() {
-      return this.individuals.filter((individual) => !individual.deathDay).length;
+      return this.individuals.filter((individual) => individual.deathDay == null).length;
     }
     archiveDeadIndividuals() {
       for (let [individualId, individual] of this.individualsById.entries()) {
-        if (individual.deathDay) {
+        if (individual.deathDay != null) {
           this.individualsById.delete(individualId);
+        } else {
+          individual.pruneDeadParents();
         }
       }
       this.individuals = Array.from(this.individualsById.values());
-      for (let individual of this.individuals) {
-        let parent = individual.parent;
-        let deadInARow = 0;
-        while (parent && deadInARow < 2) {
-          if (parent.deathDay) {
-            deadInARow++;
-          } else {
-            deadInARow = 0;
-          }
-          parent = parent.parent;
-        }
-        let nextParent = parent;
-        while (nextParent) {
-          const nextNextParent = nextParent.parent;
-          nextParent.parent = null;
-          nextParent = nextNextParent;
-        }
-      }
+    }
+    logAction(action, succesful) {
+      this.metrics.logAction(action, succesful);
     }
   };
 
@@ -1535,9 +1864,6 @@ ${i + 1} ${this.events[i]}`;
   function distanceBetweenPoints(pt1, pt2) {
     return Math.sqrt(Math.pow(pt2.x - pt1.x, 2) + Math.pow(pt2.y - pt1.y, 2));
   }
-  function _angleDiff(a, b) {
-    return (a - b + PITAU) % TAU - PI;
-  }
   function _normalizeAngle(a) {
     return (a % TAU + TAU) % TAU;
   }
@@ -1698,65 +2024,6 @@ ${i + 1} ${this.events[i]}`;
     const check = rtl ? "left" : "right";
     return align === check ? right : align === "center" ? (left + right) / 2 : left;
   };
-  function _getStartAndCountOfVisiblePoints(meta, points, animationsDisabled) {
-    const pointCount = points.length;
-    let start = 0;
-    let count = pointCount;
-    if (meta._sorted) {
-      const { iScale, vScale, _parsed } = meta;
-      const spanGaps = meta.dataset ? meta.dataset.options ? meta.dataset.options.spanGaps : null : null;
-      const axis = iScale.axis;
-      const { min, max, minDefined, maxDefined } = iScale.getUserBounds();
-      if (minDefined) {
-        start = Math.min(
-          // @ts-expect-error Need to type _parsed
-          _lookupByKey(_parsed, axis, min).lo,
-          // @ts-expect-error Need to fix types on _lookupByKey
-          animationsDisabled ? pointCount : _lookupByKey(points, axis, iScale.getPixelForValue(min)).lo
-        );
-        if (spanGaps) {
-          const distanceToDefinedLo = _parsed.slice(0, start + 1).reverse().findIndex((point) => !isNullOrUndef(point[vScale.axis]));
-          start -= Math.max(0, distanceToDefinedLo);
-        }
-        start = _limitValue(start, 0, pointCount - 1);
-      }
-      if (maxDefined) {
-        let end = Math.max(
-          // @ts-expect-error Need to type _parsed
-          _lookupByKey(_parsed, iScale.axis, max, true).hi + 1,
-          // @ts-expect-error Need to fix types on _lookupByKey
-          animationsDisabled ? 0 : _lookupByKey(points, axis, iScale.getPixelForValue(max), true).hi + 1
-        );
-        if (spanGaps) {
-          const distanceToDefinedHi = _parsed.slice(end - 1).findIndex((point) => !isNullOrUndef(point[vScale.axis]));
-          end += Math.max(0, distanceToDefinedHi);
-        }
-        count = _limitValue(end, start, pointCount) - start;
-      } else {
-        count = pointCount - start;
-      }
-    }
-    return {
-      start,
-      count
-    };
-  }
-  function _scaleRangesChanged(meta) {
-    const { xScale, yScale, _scaleRanges } = meta;
-    const newRanges = {
-      xmin: xScale.min,
-      xmax: xScale.max,
-      ymin: yScale.min,
-      ymax: yScale.max
-    };
-    if (!_scaleRanges) {
-      meta._scaleRanges = newRanges;
-      return true;
-    }
-    const changed = _scaleRanges.xmin !== xScale.min || _scaleRanges.xmax !== xScale.max || _scaleRanges.ymin !== yScale.min || _scaleRanges.ymax !== yScale.max;
-    Object.assign(_scaleRanges, newRanges);
-    return changed;
-  }
   var atEdge = (t) => t === 0 || t === 1;
   var elasticIn = (t, s, p) => -(Math.pow(2, 10 * (t -= 1)) * Math.sin((t - s) * TAU / p));
   var elasticOut = (t, s, p) => Math.pow(2, -10 * t) * Math.sin((t - s) * TAU / p) + 1;
@@ -2394,27 +2661,6 @@ ${i + 1} ${this.events[i]}`;
   function unclipArea(ctx) {
     ctx.restore();
   }
-  function _steppedLineTo(ctx, previous, target, flip, mode) {
-    if (!previous) {
-      return ctx.lineTo(target.x, target.y);
-    }
-    if (mode === "middle") {
-      const midpoint = (previous.x + target.x) / 2;
-      ctx.lineTo(midpoint, previous.y);
-      ctx.lineTo(midpoint, target.y);
-    } else if (mode === "after" !== !!flip) {
-      ctx.lineTo(previous.x, target.y);
-    } else {
-      ctx.lineTo(target.x, previous.y);
-    }
-    ctx.lineTo(target.x, target.y);
-  }
-  function _bezierCurveTo(ctx, previous, target, flip) {
-    if (!previous) {
-      return ctx.lineTo(target.x, target.y);
-    }
-    ctx.bezierCurveTo(flip ? previous.cp1x : previous.cp2x, flip ? previous.cp1y : previous.cp2y, flip ? target.cp2x : target.cp1x, flip ? target.cp2y : target.cp1y, target.x, target.y);
-  }
   function setRenderOpts(ctx, opts) {
     if (opts.translation) {
       ctx.translate(opts.translation[0], opts.translation[1]);
@@ -2899,152 +3145,6 @@ ${i + 1} ${this.events[i]}`;
     return Array.from(set2);
   }
   var EPSILON = Number.EPSILON || 1e-14;
-  var getPoint = (points, i) => i < points.length && !points[i].skip && points[i];
-  var getValueAxis = (indexAxis) => indexAxis === "x" ? "y" : "x";
-  function splineCurve(firstPoint, middlePoint, afterPoint, t) {
-    const previous = firstPoint.skip ? middlePoint : firstPoint;
-    const current = middlePoint;
-    const next = afterPoint.skip ? middlePoint : afterPoint;
-    const d01 = distanceBetweenPoints(current, previous);
-    const d12 = distanceBetweenPoints(next, current);
-    let s01 = d01 / (d01 + d12);
-    let s12 = d12 / (d01 + d12);
-    s01 = isNaN(s01) ? 0 : s01;
-    s12 = isNaN(s12) ? 0 : s12;
-    const fa = t * s01;
-    const fb = t * s12;
-    return {
-      previous: {
-        x: current.x - fa * (next.x - previous.x),
-        y: current.y - fa * (next.y - previous.y)
-      },
-      next: {
-        x: current.x + fb * (next.x - previous.x),
-        y: current.y + fb * (next.y - previous.y)
-      }
-    };
-  }
-  function monotoneAdjust(points, deltaK, mK) {
-    const pointsLen = points.length;
-    let alphaK, betaK, tauK, squaredMagnitude, pointCurrent;
-    let pointAfter = getPoint(points, 0);
-    for (let i = 0; i < pointsLen - 1; ++i) {
-      pointCurrent = pointAfter;
-      pointAfter = getPoint(points, i + 1);
-      if (!pointCurrent || !pointAfter) {
-        continue;
-      }
-      if (almostEquals(deltaK[i], 0, EPSILON)) {
-        mK[i] = mK[i + 1] = 0;
-        continue;
-      }
-      alphaK = mK[i] / deltaK[i];
-      betaK = mK[i + 1] / deltaK[i];
-      squaredMagnitude = Math.pow(alphaK, 2) + Math.pow(betaK, 2);
-      if (squaredMagnitude <= 9) {
-        continue;
-      }
-      tauK = 3 / Math.sqrt(squaredMagnitude);
-      mK[i] = alphaK * tauK * deltaK[i];
-      mK[i + 1] = betaK * tauK * deltaK[i];
-    }
-  }
-  function monotoneCompute(points, mK, indexAxis = "x") {
-    const valueAxis = getValueAxis(indexAxis);
-    const pointsLen = points.length;
-    let delta, pointBefore, pointCurrent;
-    let pointAfter = getPoint(points, 0);
-    for (let i = 0; i < pointsLen; ++i) {
-      pointBefore = pointCurrent;
-      pointCurrent = pointAfter;
-      pointAfter = getPoint(points, i + 1);
-      if (!pointCurrent) {
-        continue;
-      }
-      const iPixel = pointCurrent[indexAxis];
-      const vPixel = pointCurrent[valueAxis];
-      if (pointBefore) {
-        delta = (iPixel - pointBefore[indexAxis]) / 3;
-        pointCurrent[`cp1${indexAxis}`] = iPixel - delta;
-        pointCurrent[`cp1${valueAxis}`] = vPixel - delta * mK[i];
-      }
-      if (pointAfter) {
-        delta = (pointAfter[indexAxis] - iPixel) / 3;
-        pointCurrent[`cp2${indexAxis}`] = iPixel + delta;
-        pointCurrent[`cp2${valueAxis}`] = vPixel + delta * mK[i];
-      }
-    }
-  }
-  function splineCurveMonotone(points, indexAxis = "x") {
-    const valueAxis = getValueAxis(indexAxis);
-    const pointsLen = points.length;
-    const deltaK = Array(pointsLen).fill(0);
-    const mK = Array(pointsLen);
-    let i, pointBefore, pointCurrent;
-    let pointAfter = getPoint(points, 0);
-    for (i = 0; i < pointsLen; ++i) {
-      pointBefore = pointCurrent;
-      pointCurrent = pointAfter;
-      pointAfter = getPoint(points, i + 1);
-      if (!pointCurrent) {
-        continue;
-      }
-      if (pointAfter) {
-        const slopeDelta = pointAfter[indexAxis] - pointCurrent[indexAxis];
-        deltaK[i] = slopeDelta !== 0 ? (pointAfter[valueAxis] - pointCurrent[valueAxis]) / slopeDelta : 0;
-      }
-      mK[i] = !pointBefore ? deltaK[i] : !pointAfter ? deltaK[i - 1] : sign(deltaK[i - 1]) !== sign(deltaK[i]) ? 0 : (deltaK[i - 1] + deltaK[i]) / 2;
-    }
-    monotoneAdjust(points, deltaK, mK);
-    monotoneCompute(points, mK, indexAxis);
-  }
-  function capControlPoint(pt, min, max) {
-    return Math.max(Math.min(pt, max), min);
-  }
-  function capBezierPoints(points, area) {
-    let i, ilen, point, inArea, inAreaPrev;
-    let inAreaNext = _isPointInArea(points[0], area);
-    for (i = 0, ilen = points.length; i < ilen; ++i) {
-      inAreaPrev = inArea;
-      inArea = inAreaNext;
-      inAreaNext = i < ilen - 1 && _isPointInArea(points[i + 1], area);
-      if (!inArea) {
-        continue;
-      }
-      point = points[i];
-      if (inAreaPrev) {
-        point.cp1x = capControlPoint(point.cp1x, area.left, area.right);
-        point.cp1y = capControlPoint(point.cp1y, area.top, area.bottom);
-      }
-      if (inAreaNext) {
-        point.cp2x = capControlPoint(point.cp2x, area.left, area.right);
-        point.cp2y = capControlPoint(point.cp2y, area.top, area.bottom);
-      }
-    }
-  }
-  function _updateBezierControlPoints(points, options, area, loop, indexAxis) {
-    let i, ilen, point, controlPoints;
-    if (options.spanGaps) {
-      points = points.filter((pt) => !pt.skip);
-    }
-    if (options.cubicInterpolationMode === "monotone") {
-      splineCurveMonotone(points, indexAxis);
-    } else {
-      let prev = loop ? points[points.length - 1] : points[0];
-      for (i = 0, ilen = points.length; i < ilen; ++i) {
-        point = points[i];
-        controlPoints = splineCurve(prev, point, points[Math.min(i + 1, ilen - (loop ? 0 : 1)) % ilen], options.tension);
-        point.cp1x = controlPoints.previous.x;
-        point.cp1y = controlPoints.previous.y;
-        point.cp2x = controlPoints.next.x;
-        point.cp2y = controlPoints.next.y;
-        prev = point;
-      }
-    }
-    if (options.capBezierPoints) {
-      capBezierPoints(points, area);
-    }
-  }
   function _isDomSupported() {
     return typeof window !== "undefined" && typeof document !== "undefined";
   }
@@ -3230,34 +3330,6 @@ ${i + 1} ${this.events[i]}`;
     const matches = value && value.match(/^(\d+)(\.\d+)?px$/);
     return matches ? +matches[1] : void 0;
   }
-  function _pointInLine(p1, p2, t, mode) {
-    return {
-      x: p1.x + t * (p2.x - p1.x),
-      y: p1.y + t * (p2.y - p1.y)
-    };
-  }
-  function _steppedInterpolation(p1, p2, t, mode) {
-    return {
-      x: p1.x + t * (p2.x - p1.x),
-      y: mode === "middle" ? t < 0.5 ? p1.y : p2.y : mode === "after" ? t < 1 ? p1.y : p2.y : t > 0 ? p2.y : p1.y
-    };
-  }
-  function _bezierInterpolation(p1, p2, t, mode) {
-    const cp1 = {
-      x: p1.cp2x,
-      y: p1.cp2y
-    };
-    const cp2 = {
-      x: p2.cp1x,
-      y: p2.cp1y
-    };
-    const a = _pointInLine(p1, cp1, t);
-    const b = _pointInLine(cp1, cp2, t);
-    const c = _pointInLine(cp2, p2, t);
-    const d = _pointInLine(a, b, t);
-    const e = _pointInLine(b, c, t);
-    return _pointInLine(d, e, t);
-  }
   var getRightToLeftAdapter = function(rectX, width) {
     return {
       x(x) {
@@ -3318,295 +3390,6 @@ ${i + 1} ${this.events[i]}`;
       delete ctx.prevTextDirection;
       ctx.canvas.style.setProperty("direction", original[0], original[1]);
     }
-  }
-  function propertyFn(property) {
-    if (property === "angle") {
-      return {
-        between: _angleBetween,
-        compare: _angleDiff,
-        normalize: _normalizeAngle
-      };
-    }
-    return {
-      between: _isBetween,
-      compare: (a, b) => a - b,
-      normalize: (x) => x
-    };
-  }
-  function normalizeSegment({ start, end, count, loop, style }) {
-    return {
-      start: start % count,
-      end: end % count,
-      loop: loop && (end - start + 1) % count === 0,
-      style
-    };
-  }
-  function getSegment(segment, points, bounds) {
-    const { property, start: startBound, end: endBound } = bounds;
-    const { between, normalize } = propertyFn(property);
-    const count = points.length;
-    let { start, end, loop } = segment;
-    let i, ilen;
-    if (loop) {
-      start += count;
-      end += count;
-      for (i = 0, ilen = count; i < ilen; ++i) {
-        if (!between(normalize(points[start % count][property]), startBound, endBound)) {
-          break;
-        }
-        start--;
-        end--;
-      }
-      start %= count;
-      end %= count;
-    }
-    if (end < start) {
-      end += count;
-    }
-    return {
-      start,
-      end,
-      loop,
-      style: segment.style
-    };
-  }
-  function _boundSegment(segment, points, bounds) {
-    if (!bounds) {
-      return [
-        segment
-      ];
-    }
-    const { property, start: startBound, end: endBound } = bounds;
-    const count = points.length;
-    const { compare, between, normalize } = propertyFn(property);
-    const { start, end, loop, style } = getSegment(segment, points, bounds);
-    const result = [];
-    let inside = false;
-    let subStart = null;
-    let value, point, prevValue;
-    const startIsBefore = () => between(startBound, prevValue, value) && compare(startBound, prevValue) !== 0;
-    const endIsBefore = () => compare(endBound, value) === 0 || between(endBound, prevValue, value);
-    const shouldStart = () => inside || startIsBefore();
-    const shouldStop = () => !inside || endIsBefore();
-    for (let i = start, prev = start; i <= end; ++i) {
-      point = points[i % count];
-      if (point.skip) {
-        continue;
-      }
-      value = normalize(point[property]);
-      if (value === prevValue) {
-        continue;
-      }
-      inside = between(value, startBound, endBound);
-      if (subStart === null && shouldStart()) {
-        subStart = compare(value, startBound) === 0 ? i : prev;
-      }
-      if (subStart !== null && shouldStop()) {
-        result.push(normalizeSegment({
-          start: subStart,
-          end: i,
-          loop,
-          count,
-          style
-        }));
-        subStart = null;
-      }
-      prev = i;
-      prevValue = value;
-    }
-    if (subStart !== null) {
-      result.push(normalizeSegment({
-        start: subStart,
-        end,
-        loop,
-        count,
-        style
-      }));
-    }
-    return result;
-  }
-  function _boundSegments(line, bounds) {
-    const result = [];
-    const segments = line.segments;
-    for (let i = 0; i < segments.length; i++) {
-      const sub = _boundSegment(segments[i], line.points, bounds);
-      if (sub.length) {
-        result.push(...sub);
-      }
-    }
-    return result;
-  }
-  function findStartAndEnd(points, count, loop, spanGaps) {
-    let start = 0;
-    let end = count - 1;
-    if (loop && !spanGaps) {
-      while (start < count && !points[start].skip) {
-        start++;
-      }
-    }
-    while (start < count && points[start].skip) {
-      start++;
-    }
-    start %= count;
-    if (loop) {
-      end += start;
-    }
-    while (end > start && points[end % count].skip) {
-      end--;
-    }
-    end %= count;
-    return {
-      start,
-      end
-    };
-  }
-  function solidSegments(points, start, max, loop) {
-    const count = points.length;
-    const result = [];
-    let last = start;
-    let prev = points[start];
-    let end;
-    for (end = start + 1; end <= max; ++end) {
-      const cur = points[end % count];
-      if (cur.skip || cur.stop) {
-        if (!prev.skip) {
-          loop = false;
-          result.push({
-            start: start % count,
-            end: (end - 1) % count,
-            loop
-          });
-          start = last = cur.stop ? end : null;
-        }
-      } else {
-        last = end;
-        if (prev.skip) {
-          start = end;
-        }
-      }
-      prev = cur;
-    }
-    if (last !== null) {
-      result.push({
-        start: start % count,
-        end: last % count,
-        loop
-      });
-    }
-    return result;
-  }
-  function _computeSegments(line, segmentOptions) {
-    const points = line.points;
-    const spanGaps = line.options.spanGaps;
-    const count = points.length;
-    if (!count) {
-      return [];
-    }
-    const loop = !!line._loop;
-    const { start, end } = findStartAndEnd(points, count, loop, spanGaps);
-    if (spanGaps === true) {
-      return splitByStyles(line, [
-        {
-          start,
-          end,
-          loop
-        }
-      ], points, segmentOptions);
-    }
-    const max = end < start ? end + count : end;
-    const completeLoop = !!line._fullLoop && start === 0 && end === count - 1;
-    return splitByStyles(line, solidSegments(points, start, max, completeLoop), points, segmentOptions);
-  }
-  function splitByStyles(line, segments, points, segmentOptions) {
-    if (!segmentOptions || !segmentOptions.setContext || !points) {
-      return segments;
-    }
-    return doSplitByStyles(line, segments, points, segmentOptions);
-  }
-  function doSplitByStyles(line, segments, points, segmentOptions) {
-    const chartContext = line._chart.getContext();
-    const baseStyle = readStyle(line.options);
-    const { _datasetIndex: datasetIndex, options: { spanGaps } } = line;
-    const count = points.length;
-    const result = [];
-    let prevStyle = baseStyle;
-    let start = segments[0].start;
-    let i = start;
-    function addStyle(s, e, l, st) {
-      const dir = spanGaps ? -1 : 1;
-      if (s === e) {
-        return;
-      }
-      s += count;
-      while (points[s % count].skip) {
-        s -= dir;
-      }
-      while (points[e % count].skip) {
-        e += dir;
-      }
-      if (s % count !== e % count) {
-        result.push({
-          start: s % count,
-          end: e % count,
-          loop: l,
-          style: st
-        });
-        prevStyle = st;
-        start = e % count;
-      }
-    }
-    for (const segment of segments) {
-      start = spanGaps ? start : segment.start;
-      let prev = points[start % count];
-      let style;
-      for (i = start + 1; i <= segment.end; i++) {
-        const pt = points[i % count];
-        style = readStyle(segmentOptions.setContext(createContext(chartContext, {
-          type: "segment",
-          p0: prev,
-          p1: pt,
-          p0DataIndex: (i - 1) % count,
-          p1DataIndex: i % count,
-          datasetIndex
-        })));
-        if (styleChanged(style, prevStyle)) {
-          addStyle(start, i - 1, segment.loop, prevStyle);
-        }
-        prev = pt;
-        prevStyle = style;
-      }
-      if (start < i - 1) {
-        addStyle(start, i - 1, segment.loop, prevStyle);
-      }
-    }
-    return result;
-  }
-  function readStyle(options) {
-    return {
-      backgroundColor: options.backgroundColor,
-      borderCapStyle: options.borderCapStyle,
-      borderDash: options.borderDash,
-      borderDashOffset: options.borderDashOffset,
-      borderJoinStyle: options.borderJoinStyle,
-      borderWidth: options.borderWidth,
-      borderColor: options.borderColor
-    };
-  }
-  function styleChanged(style, prevStyle) {
-    if (!prevStyle) {
-      return false;
-    }
-    const cache = [];
-    const replacer = function(key, value) {
-      if (!isPatternOrGradient(value)) {
-        return value;
-      }
-      if (!cache.includes(value)) {
-        cache.push(value);
-      }
-      return cache.indexOf(value);
-    };
-    return JSON.stringify(style, replacer) !== JSON.stringify(prevStyle, replacer);
   }
   function getSizeForArea(scale, chartArea, field) {
     return scale.options.clip ? scale[field] : chartArea[field];
@@ -3676,7 +3459,7 @@ ${i + 1} ${this.events[i]}`;
         }
         const items = anims.items;
         let i = items.length - 1;
-        let draw2 = false;
+        let draw = false;
         let item;
         for (; i >= 0; --i) {
           item = items[i];
@@ -3685,13 +3468,13 @@ ${i + 1} ${this.events[i]}`;
               anims.duration = item._total;
             }
             item.tick(date);
-            draw2 = true;
+            draw = true;
           } else {
             items[i] = items[items.length - 1];
             items.pop();
           }
         }
-        if (draw2) {
+        if (draw) {
           chart.draw();
           this._notify(chart, anims, date, "progress");
         }
@@ -4795,109 +4578,498 @@ ${i + 1} ${this.events[i]}`;
       ]);
     }
   };
-  var LineController = class extends DatasetController {
-    static id = "line";
+  function getAllScaleValues(scale, type) {
+    if (!scale._cache.$bar) {
+      const visibleMetas = scale.getMatchingVisibleMetas(type);
+      let values = [];
+      for (let i = 0, ilen = visibleMetas.length; i < ilen; i++) {
+        values = values.concat(visibleMetas[i].controller.getAllParsedValues(scale));
+      }
+      scale._cache.$bar = _arrayUnique(values.sort((a, b) => a - b));
+    }
+    return scale._cache.$bar;
+  }
+  function computeMinSampleSize(meta) {
+    const scale = meta.iScale;
+    const values = getAllScaleValues(scale, meta.type);
+    let min = scale._length;
+    let i, ilen, curr, prev;
+    const updateMinAndPrev = () => {
+      if (curr === 32767 || curr === -32768) {
+        return;
+      }
+      if (defined(prev)) {
+        min = Math.min(min, Math.abs(curr - prev) || min);
+      }
+      prev = curr;
+    };
+    for (i = 0, ilen = values.length; i < ilen; ++i) {
+      curr = scale.getPixelForValue(values[i]);
+      updateMinAndPrev();
+    }
+    prev = void 0;
+    for (i = 0, ilen = scale.ticks.length; i < ilen; ++i) {
+      curr = scale.getPixelForTick(i);
+      updateMinAndPrev();
+    }
+    return min;
+  }
+  function computeFitCategoryTraits(index, ruler, options, stackCount) {
+    const thickness = options.barThickness;
+    let size, ratio;
+    if (isNullOrUndef(thickness)) {
+      size = ruler.min * options.categoryPercentage;
+      ratio = options.barPercentage;
+    } else {
+      size = thickness * stackCount;
+      ratio = 1;
+    }
+    return {
+      chunk: size / stackCount,
+      ratio,
+      start: ruler.pixels[index] - size / 2
+    };
+  }
+  function computeFlexCategoryTraits(index, ruler, options, stackCount) {
+    const pixels = ruler.pixels;
+    const curr = pixels[index];
+    let prev = index > 0 ? pixels[index - 1] : null;
+    let next = index < pixels.length - 1 ? pixels[index + 1] : null;
+    const percent = options.categoryPercentage;
+    if (prev === null) {
+      prev = curr - (next === null ? ruler.end - ruler.start : next - curr);
+    }
+    if (next === null) {
+      next = curr + curr - prev;
+    }
+    const start = curr - (curr - Math.min(prev, next)) / 2 * percent;
+    const size = Math.abs(next - prev) / 2 * percent;
+    return {
+      chunk: size / stackCount,
+      ratio: options.barPercentage,
+      start
+    };
+  }
+  function parseFloatBar(entry, item, vScale, i) {
+    const startValue = vScale.parse(entry[0], i);
+    const endValue = vScale.parse(entry[1], i);
+    const min = Math.min(startValue, endValue);
+    const max = Math.max(startValue, endValue);
+    let barStart = min;
+    let barEnd = max;
+    if (Math.abs(min) > Math.abs(max)) {
+      barStart = max;
+      barEnd = min;
+    }
+    item[vScale.axis] = barEnd;
+    item._custom = {
+      barStart,
+      barEnd,
+      start: startValue,
+      end: endValue,
+      min,
+      max
+    };
+  }
+  function parseValue(entry, item, vScale, i) {
+    if (isArray(entry)) {
+      parseFloatBar(entry, item, vScale, i);
+    } else {
+      item[vScale.axis] = vScale.parse(entry, i);
+    }
+    return item;
+  }
+  function parseArrayOrPrimitive(meta, data, start, count) {
+    const iScale = meta.iScale;
+    const vScale = meta.vScale;
+    const labels = iScale.getLabels();
+    const singleScale = iScale === vScale;
+    const parsed = [];
+    let i, ilen, item, entry;
+    for (i = start, ilen = start + count; i < ilen; ++i) {
+      entry = data[i];
+      item = {};
+      item[iScale.axis] = singleScale || iScale.parse(labels[i], i);
+      parsed.push(parseValue(entry, item, vScale, i));
+    }
+    return parsed;
+  }
+  function isFloatBar(custom) {
+    return custom && custom.barStart !== void 0 && custom.barEnd !== void 0;
+  }
+  function barSign(size, vScale, actualBase) {
+    if (size !== 0) {
+      return sign(size);
+    }
+    return (vScale.isHorizontal() ? 1 : -1) * (vScale.min >= actualBase ? 1 : -1);
+  }
+  function borderProps(properties) {
+    let reverse, start, end, top, bottom;
+    if (properties.horizontal) {
+      reverse = properties.base > properties.x;
+      start = "left";
+      end = "right";
+    } else {
+      reverse = properties.base < properties.y;
+      start = "bottom";
+      end = "top";
+    }
+    if (reverse) {
+      top = "end";
+      bottom = "start";
+    } else {
+      top = "start";
+      bottom = "end";
+    }
+    return {
+      start,
+      end,
+      reverse,
+      top,
+      bottom
+    };
+  }
+  function setBorderSkipped(properties, options, stack, index) {
+    let edge = options.borderSkipped;
+    const res = {};
+    if (!edge) {
+      properties.borderSkipped = res;
+      return;
+    }
+    if (edge === true) {
+      properties.borderSkipped = {
+        top: true,
+        right: true,
+        bottom: true,
+        left: true
+      };
+      return;
+    }
+    const { start, end, reverse, top, bottom } = borderProps(properties);
+    if (edge === "middle" && stack) {
+      properties.enableBorderRadius = true;
+      if ((stack._top || 0) === index) {
+        edge = top;
+      } else if ((stack._bottom || 0) === index) {
+        edge = bottom;
+      } else {
+        res[parseEdge(bottom, start, end, reverse)] = true;
+        edge = top;
+      }
+    }
+    res[parseEdge(edge, start, end, reverse)] = true;
+    properties.borderSkipped = res;
+  }
+  function parseEdge(edge, a, b, reverse) {
+    if (reverse) {
+      edge = swap(edge, a, b);
+      edge = startEnd(edge, b, a);
+    } else {
+      edge = startEnd(edge, a, b);
+    }
+    return edge;
+  }
+  function swap(orig, v1, v2) {
+    return orig === v1 ? v2 : orig === v2 ? v1 : orig;
+  }
+  function startEnd(v, start, end) {
+    return v === "start" ? start : v === "end" ? end : v;
+  }
+  function setInflateAmount(properties, { inflateAmount }, ratio) {
+    properties.inflateAmount = inflateAmount === "auto" ? ratio === 1 ? 0.33 : 0 : inflateAmount;
+  }
+  var BarController = class extends DatasetController {
+    static id = "bar";
     static defaults = {
-      datasetElementType: "line",
-      dataElementType: "point",
-      showLine: true,
-      spanGaps: false
+      datasetElementType: false,
+      dataElementType: "bar",
+      categoryPercentage: 0.8,
+      barPercentage: 0.9,
+      grouped: true,
+      animations: {
+        numbers: {
+          type: "number",
+          properties: [
+            "x",
+            "y",
+            "base",
+            "width",
+            "height"
+          ]
+        }
+      }
     };
     static overrides = {
       scales: {
         _index_: {
-          type: "category"
+          type: "category",
+          offset: true,
+          grid: {
+            offset: true
+          }
         },
         _value_: {
-          type: "linear"
+          type: "linear",
+          beginAtZero: true
         }
       }
     };
-    initialize() {
-      this.enableOptionSharing = true;
-      this.supportsDecimation = true;
-      super.initialize();
+    parsePrimitiveData(meta, data, start, count) {
+      return parseArrayOrPrimitive(meta, data, start, count);
     }
-    update(mode) {
-      const meta = this._cachedMeta;
-      const { dataset: line, data: points = [], _dataset } = meta;
-      const animationsDisabled = this.chart._animationsDisabled;
-      let { start, count } = _getStartAndCountOfVisiblePoints(meta, points, animationsDisabled);
-      this._drawStart = start;
-      this._drawCount = count;
-      if (_scaleRangesChanged(meta)) {
-        start = 0;
-        count = points.length;
-      }
-      line._chart = this.chart;
-      line._datasetIndex = this.index;
-      line._decimated = !!_dataset._decimated;
-      line.points = points;
-      const options = this.resolveDatasetElementOptions(mode);
-      if (!this.options.showLine) {
-        options.borderWidth = 0;
-      }
-      options.segment = this.options.segment;
-      this.updateElement(line, void 0, {
-        animated: !animationsDisabled,
-        options
-      }, mode);
-      this.updateElements(points, start, count, mode);
+    parseArrayData(meta, data, start, count) {
+      return parseArrayOrPrimitive(meta, data, start, count);
     }
-    updateElements(points, start, count, mode) {
-      const reset = mode === "reset";
-      const { iScale, vScale, _stacked, _dataset } = this._cachedMeta;
-      const { sharedOptions, includeOptions } = this._getSharedOptions(start, mode);
-      const iAxis = iScale.axis;
-      const vAxis = vScale.axis;
-      const { spanGaps, segment } = this.options;
-      const maxGapLength = isNumber(spanGaps) ? spanGaps : Number.POSITIVE_INFINITY;
-      const directUpdate = this.chart._animationsDisabled || reset || mode === "none";
-      const end = start + count;
-      const pointsCount = points.length;
-      let prevParsed = start > 0 && this.getParsed(start - 1);
-      for (let i = 0; i < pointsCount; ++i) {
-        const point = points[i];
-        const properties = directUpdate ? point : {};
-        if (i < start || i >= end) {
-          properties.skip = true;
-          continue;
-        }
-        const parsed = this.getParsed(i);
-        const nullData = isNullOrUndef(parsed[vAxis]);
-        const iPixel = properties[iAxis] = iScale.getPixelForValue(parsed[iAxis], i);
-        const vPixel = properties[vAxis] = reset || nullData ? vScale.getBasePixel() : vScale.getPixelForValue(_stacked ? this.applyStack(vScale, parsed, _stacked) : parsed[vAxis], i);
-        properties.skip = isNaN(iPixel) || isNaN(vPixel) || nullData;
-        properties.stop = i > 0 && Math.abs(parsed[iAxis] - prevParsed[iAxis]) > maxGapLength;
-        if (segment) {
-          properties.parsed = parsed;
-          properties.raw = _dataset.data[i];
-        }
-        if (includeOptions) {
-          properties.options = sharedOptions || this.resolveDataElementOptions(i, point.active ? "active" : mode);
-        }
-        if (!directUpdate) {
-          this.updateElement(point, i, properties, mode);
-        }
-        prevParsed = parsed;
+    parseObjectData(meta, data, start, count) {
+      const { iScale, vScale } = meta;
+      const { xAxisKey = "x", yAxisKey = "y" } = this._parsing;
+      const iAxisKey = iScale.axis === "x" ? xAxisKey : yAxisKey;
+      const vAxisKey = vScale.axis === "x" ? xAxisKey : yAxisKey;
+      const parsed = [];
+      let i, ilen, item, obj;
+      for (i = start, ilen = start + count; i < ilen; ++i) {
+        obj = data[i];
+        item = {};
+        item[iScale.axis] = iScale.parse(resolveObjectKey(obj, iAxisKey), i);
+        parsed.push(parseValue(resolveObjectKey(obj, vAxisKey), item, vScale, i));
+      }
+      return parsed;
+    }
+    updateRangeFromParsed(range, scale, parsed, stack) {
+      super.updateRangeFromParsed(range, scale, parsed, stack);
+      const custom = parsed._custom;
+      if (custom && scale === this._cachedMeta.vScale) {
+        range.min = Math.min(range.min, custom.min);
+        range.max = Math.max(range.max, custom.max);
       }
     }
     getMaxOverflow() {
+      return 0;
+    }
+    getLabelAndValue(index) {
       const meta = this._cachedMeta;
-      const dataset = meta.dataset;
-      const border = dataset.options && dataset.options.borderWidth || 0;
-      const data = meta.data || [];
-      if (!data.length) {
-        return border;
+      const { iScale, vScale } = meta;
+      const parsed = this.getParsed(index);
+      const custom = parsed._custom;
+      const value = isFloatBar(custom) ? "[" + custom.start + ", " + custom.end + "]" : "" + vScale.getLabelForValue(parsed[vScale.axis]);
+      return {
+        label: "" + iScale.getLabelForValue(parsed[iScale.axis]),
+        value
+      };
+    }
+    initialize() {
+      this.enableOptionSharing = true;
+      super.initialize();
+      const meta = this._cachedMeta;
+      meta.stack = this.getDataset().stack;
+    }
+    update(mode) {
+      const meta = this._cachedMeta;
+      this.updateElements(meta.data, 0, meta.data.length, mode);
+    }
+    updateElements(bars, start, count, mode) {
+      const reset = mode === "reset";
+      const { index, _cachedMeta: { vScale } } = this;
+      const base = vScale.getBasePixel();
+      const horizontal = vScale.isHorizontal();
+      const ruler = this._getRuler();
+      const { sharedOptions, includeOptions } = this._getSharedOptions(start, mode);
+      for (let i = start; i < start + count; i++) {
+        const parsed = this.getParsed(i);
+        const vpixels = reset || isNullOrUndef(parsed[vScale.axis]) ? {
+          base,
+          head: base
+        } : this._calculateBarValuePixels(i);
+        const ipixels = this._calculateBarIndexPixels(i, ruler);
+        const stack = (parsed._stacks || {})[vScale.axis];
+        const properties = {
+          horizontal,
+          base: vpixels.base,
+          enableBorderRadius: !stack || isFloatBar(parsed._custom) || index === stack._top || index === stack._bottom,
+          x: horizontal ? vpixels.head : ipixels.center,
+          y: horizontal ? ipixels.center : vpixels.head,
+          height: horizontal ? ipixels.size : Math.abs(vpixels.size),
+          width: horizontal ? Math.abs(vpixels.size) : ipixels.size
+        };
+        if (includeOptions) {
+          properties.options = sharedOptions || this.resolveDataElementOptions(i, bars[i].active ? "active" : mode);
+        }
+        const options = properties.options || bars[i].options;
+        setBorderSkipped(properties, options, stack, index);
+        setInflateAmount(properties, options, ruler.ratio);
+        this.updateElement(bars[i], i, properties, mode);
       }
-      const firstPoint = data[0].size(this.resolveDataElementOptions(0));
-      const lastPoint = data[data.length - 1].size(this.resolveDataElementOptions(data.length - 1));
-      return Math.max(border, firstPoint, lastPoint) / 2;
+    }
+    _getStacks(last, dataIndex) {
+      const { iScale } = this._cachedMeta;
+      const metasets = iScale.getMatchingVisibleMetas(this._type).filter((meta) => meta.controller.options.grouped);
+      const stacked = iScale.options.stacked;
+      const stacks = [];
+      const currentParsed = this._cachedMeta.controller.getParsed(dataIndex);
+      const iScaleValue = currentParsed && currentParsed[iScale.axis];
+      const skipNull = (meta) => {
+        const parsed = meta._parsed.find((item) => item[iScale.axis] === iScaleValue);
+        const val = parsed && parsed[meta.vScale.axis];
+        if (isNullOrUndef(val) || isNaN(val)) {
+          return true;
+        }
+      };
+      for (const meta of metasets) {
+        if (dataIndex !== void 0 && skipNull(meta)) {
+          continue;
+        }
+        if (stacked === false || stacks.indexOf(meta.stack) === -1 || stacked === void 0 && meta.stack === void 0) {
+          stacks.push(meta.stack);
+        }
+        if (meta.index === last) {
+          break;
+        }
+      }
+      if (!stacks.length) {
+        stacks.push(void 0);
+      }
+      return stacks;
+    }
+    _getStackCount(index) {
+      return this._getStacks(void 0, index).length;
+    }
+    _getAxisCount() {
+      return this._getAxis().length;
+    }
+    getFirstScaleIdForIndexAxis() {
+      const scales = this.chart.scales;
+      const indexScaleId = this.chart.options.indexAxis;
+      return Object.keys(scales).filter((key) => scales[key].axis === indexScaleId).shift();
+    }
+    _getAxis() {
+      const axis = {};
+      const firstScaleAxisId = this.getFirstScaleIdForIndexAxis();
+      for (const dataset of this.chart.data.datasets) {
+        axis[valueOrDefault(this.chart.options.indexAxis === "x" ? dataset.xAxisID : dataset.yAxisID, firstScaleAxisId)] = true;
+      }
+      return Object.keys(axis);
+    }
+    _getStackIndex(datasetIndex, name, dataIndex) {
+      const stacks = this._getStacks(datasetIndex, dataIndex);
+      const index = name !== void 0 ? stacks.indexOf(name) : -1;
+      return index === -1 ? stacks.length - 1 : index;
+    }
+    _getRuler() {
+      const opts = this.options;
+      const meta = this._cachedMeta;
+      const iScale = meta.iScale;
+      const pixels = [];
+      let i, ilen;
+      for (i = 0, ilen = meta.data.length; i < ilen; ++i) {
+        pixels.push(iScale.getPixelForValue(this.getParsed(i)[iScale.axis], i));
+      }
+      const barThickness = opts.barThickness;
+      const min = barThickness || computeMinSampleSize(meta);
+      return {
+        min,
+        pixels,
+        start: iScale._startPixel,
+        end: iScale._endPixel,
+        stackCount: this._getStackCount(),
+        scale: iScale,
+        grouped: opts.grouped,
+        ratio: barThickness ? 1 : opts.categoryPercentage * opts.barPercentage
+      };
+    }
+    _calculateBarValuePixels(index) {
+      const { _cachedMeta: { vScale, _stacked, index: datasetIndex }, options: { base: baseValue, minBarLength } } = this;
+      const actualBase = baseValue || 0;
+      const parsed = this.getParsed(index);
+      const custom = parsed._custom;
+      const floating = isFloatBar(custom);
+      let value = parsed[vScale.axis];
+      let start = 0;
+      let length = _stacked ? this.applyStack(vScale, parsed, _stacked) : value;
+      let head, size;
+      if (length !== value) {
+        start = length - value;
+        length = value;
+      }
+      if (floating) {
+        value = custom.barStart;
+        length = custom.barEnd - custom.barStart;
+        if (value !== 0 && sign(value) !== sign(custom.barEnd)) {
+          start = 0;
+        }
+        start += value;
+      }
+      const startValue = !isNullOrUndef(baseValue) && !floating ? baseValue : start;
+      let base = vScale.getPixelForValue(startValue);
+      if (this.chart.getDataVisibility(index)) {
+        head = vScale.getPixelForValue(start + length);
+      } else {
+        head = base;
+      }
+      size = head - base;
+      if (Math.abs(size) < minBarLength) {
+        size = barSign(size, vScale, actualBase) * minBarLength;
+        if (value === actualBase) {
+          base -= size / 2;
+        }
+        const startPixel = vScale.getPixelForDecimal(0);
+        const endPixel = vScale.getPixelForDecimal(1);
+        const min = Math.min(startPixel, endPixel);
+        const max = Math.max(startPixel, endPixel);
+        base = Math.max(Math.min(base, max), min);
+        head = base + size;
+        if (_stacked && !floating) {
+          parsed._stacks[vScale.axis]._visualValues[datasetIndex] = vScale.getValueForPixel(head) - vScale.getValueForPixel(base);
+        }
+      }
+      if (base === vScale.getPixelForValue(actualBase)) {
+        const halfGrid = sign(size) * vScale.getLineWidthForValue(actualBase) / 2;
+        base += halfGrid;
+        size -= halfGrid;
+      }
+      return {
+        size,
+        base,
+        head,
+        center: head + size / 2
+      };
+    }
+    _calculateBarIndexPixels(index, ruler) {
+      const scale = ruler.scale;
+      const options = this.options;
+      const skipNull = options.skipNull;
+      const maxBarThickness = valueOrDefault(options.maxBarThickness, Infinity);
+      let center, size;
+      const axisCount = this._getAxisCount();
+      if (ruler.grouped) {
+        const stackCount = skipNull ? this._getStackCount(index) : ruler.stackCount;
+        const range = options.barThickness === "flex" ? computeFlexCategoryTraits(index, ruler, options, stackCount * axisCount) : computeFitCategoryTraits(index, ruler, options, stackCount * axisCount);
+        const axisID = this.chart.options.indexAxis === "x" ? this.getDataset().xAxisID : this.getDataset().yAxisID;
+        const axisNumber = this._getAxis().indexOf(valueOrDefault(axisID, this.getFirstScaleIdForIndexAxis()));
+        const stackIndex = this._getStackIndex(this.index, this._cachedMeta.stack, skipNull ? index : void 0) + axisNumber;
+        center = range.start + range.chunk * stackIndex + range.chunk / 2;
+        size = Math.min(maxBarThickness, range.chunk * range.ratio);
+      } else {
+        center = scale.getPixelForValue(this.getParsed(index)[scale.axis], index);
+        size = Math.min(maxBarThickness, ruler.min * ruler.ratio);
+      }
+      return {
+        base: center - size / 2,
+        head: center + size / 2,
+        center,
+        size
+      };
     }
     draw() {
       const meta = this._cachedMeta;
-      meta.dataset.updateControlPoints(this.chart.chartArea, meta.iScale.axis);
-      super.draw();
+      const vScale = meta.vScale;
+      const rects = meta.data;
+      const ilen = rects.length;
+      let i = 0;
+      for (; i < ilen; ++i) {
+        if (this.getParsed(i)[vScale.axis] !== null && !rects[i].hidden) {
+          rects[i].draw(this._ctx);
+        }
+      }
     }
   };
   function abstract() {
@@ -5054,13 +5226,13 @@ ${i + 1} ${this.events[i]}`;
     const distanceMetric = getDistanceMetricForAxis(axis);
     let minDistance = Number.POSITIVE_INFINITY;
     function evaluationFunc(element, datasetIndex, index) {
-      const inRange2 = element.inRange(position.x, position.y, useFinalPosition);
-      if (intersect && !inRange2) {
+      const inRange3 = element.inRange(position.x, position.y, useFinalPosition);
+      if (intersect && !inRange3) {
         return;
       }
       const center = element.getCenterPoint(useFinalPosition);
       const pointInArea = !!includeInvisible || chart.isPointInArea(center);
-      if (!pointInArea && !inRange2) {
+      if (!pointInArea && !inRange3) {
         return;
       }
       const distance = distanceMetric(position, center);
@@ -8741,318 +8913,128 @@ ${i + 1} ${this.events[i]}`;
   function invalidatePlugins() {
     return each(Chart.instances, (chart) => chart._plugins.invalidate());
   }
-  function setStyle(ctx, options, style = options) {
-    ctx.lineCap = valueOrDefault(style.borderCapStyle, options.borderCapStyle);
-    ctx.setLineDash(valueOrDefault(style.borderDash, options.borderDash));
-    ctx.lineDashOffset = valueOrDefault(style.borderDashOffset, options.borderDashOffset);
-    ctx.lineJoin = valueOrDefault(style.borderJoinStyle, options.borderJoinStyle);
-    ctx.lineWidth = valueOrDefault(style.borderWidth, options.borderWidth);
-    ctx.strokeStyle = valueOrDefault(style.borderColor, options.borderColor);
-  }
-  function lineTo(ctx, previous, target) {
-    ctx.lineTo(target.x, target.y);
-  }
-  function getLineMethod(options) {
-    if (options.stepped) {
-      return _steppedLineTo;
-    }
-    if (options.tension || options.cubicInterpolationMode === "monotone") {
-      return _bezierCurveTo;
-    }
-    return lineTo;
-  }
-  function pathVars(points, segment, params = {}) {
-    const count = points.length;
-    const { start: paramsStart = 0, end: paramsEnd = count - 1 } = params;
-    const { start: segmentStart, end: segmentEnd } = segment;
-    const start = Math.max(paramsStart, segmentStart);
-    const end = Math.min(paramsEnd, segmentEnd);
-    const outside = paramsStart < segmentStart && paramsEnd < segmentStart || paramsStart > segmentEnd && paramsEnd > segmentEnd;
-    return {
-      count,
-      start,
-      loop: segment.loop,
-      ilen: end < start && !outside ? count + end - start : end - start
-    };
-  }
-  function pathSegment(ctx, line, segment, params) {
-    const { points, options } = line;
-    const { count, start, loop, ilen } = pathVars(points, segment, params);
-    const lineMethod = getLineMethod(options);
-    let { move = true, reverse } = params || {};
-    let i, point, prev;
-    for (i = 0; i <= ilen; ++i) {
-      point = points[(start + (reverse ? ilen - i : i)) % count];
-      if (point.skip) {
-        continue;
-      } else if (move) {
-        ctx.moveTo(point.x, point.y);
-        move = false;
-      } else {
-        lineMethod(ctx, prev, point, reverse, options.stepped);
-      }
-      prev = point;
-    }
-    if (loop) {
-      point = points[(start + (reverse ? ilen : 0)) % count];
-      lineMethod(ctx, prev, point, reverse, options.stepped);
-    }
-    return !!loop;
-  }
-  function fastPathSegment(ctx, line, segment, params) {
-    const points = line.points;
-    const { count, start, ilen } = pathVars(points, segment, params);
-    const { move = true, reverse } = params || {};
-    let avgX = 0;
-    let countX = 0;
-    let i, point, prevX, minY, maxY, lastY;
-    const pointIndex = (index) => (start + (reverse ? ilen - index : index)) % count;
-    const drawX = () => {
-      if (minY !== maxY) {
-        ctx.lineTo(avgX, maxY);
-        ctx.lineTo(avgX, minY);
-        ctx.lineTo(avgX, lastY);
-      }
-    };
-    if (move) {
-      point = points[pointIndex(0)];
-      ctx.moveTo(point.x, point.y);
-    }
-    for (i = 0; i <= ilen; ++i) {
-      point = points[pointIndex(i)];
-      if (point.skip) {
-        continue;
-      }
-      const x = point.x;
-      const y = point.y;
-      const truncX = x | 0;
-      if (truncX === prevX) {
-        if (y < minY) {
-          minY = y;
-        } else if (y > maxY) {
-          maxY = y;
-        }
-        avgX = (countX * avgX + x) / ++countX;
-      } else {
-        drawX();
-        ctx.lineTo(x, y);
-        prevX = truncX;
-        countX = 0;
-        minY = maxY = y;
-      }
-      lastY = y;
-    }
-    drawX();
-  }
-  function _getSegmentMethod(line) {
-    const opts = line.options;
-    const borderDash = opts.borderDash && opts.borderDash.length;
-    const useFastPath = !line._decimated && !line._loop && !opts.tension && opts.cubicInterpolationMode !== "monotone" && !opts.stepped && !borderDash;
-    return useFastPath ? fastPathSegment : pathSegment;
-  }
-  function _getInterpolationMethod(options) {
-    if (options.stepped) {
-      return _steppedInterpolation;
-    }
-    if (options.tension || options.cubicInterpolationMode === "monotone") {
-      return _bezierInterpolation;
-    }
-    return _pointInLine;
-  }
-  function strokePathWithCache(ctx, line, start, count) {
-    let path = line._path;
-    if (!path) {
-      path = line._path = new Path2D();
-      if (line.path(path, start, count)) {
-        path.closePath();
-      }
-    }
-    setStyle(ctx, line.options);
-    ctx.stroke(path);
-  }
-  function strokePathDirect(ctx, line, start, count) {
-    const { segments, options } = line;
-    const segmentMethod = _getSegmentMethod(line);
-    for (const segment of segments) {
-      setStyle(ctx, options, segment.style);
-      ctx.beginPath();
-      if (segmentMethod(ctx, line, segment, {
-        start,
-        end: start + count - 1
-      })) {
-        ctx.closePath();
-      }
-      ctx.stroke();
-    }
-  }
-  var usePath2D = typeof Path2D === "function";
-  function draw(ctx, line, start, count) {
-    if (usePath2D && !line.options.segment) {
-      strokePathWithCache(ctx, line, start, count);
-    } else {
-      strokePathDirect(ctx, line, start, count);
-    }
-  }
-  var LineElement = class extends Element {
-    static id = "line";
-    static defaults = {
-      borderCapStyle: "butt",
-      borderDash: [],
-      borderDashOffset: 0,
-      borderJoinStyle: "miter",
-      borderWidth: 3,
-      capBezierPoints: true,
-      cubicInterpolationMode: "default",
-      fill: false,
-      spanGaps: false,
-      stepped: false,
-      tension: 0
-    };
-    static defaultRoutes = {
-      backgroundColor: "backgroundColor",
-      borderColor: "borderColor"
-    };
-    static descriptors = {
-      _scriptable: true,
-      _indexable: (name) => name !== "borderDash" && name !== "fill"
-    };
-    constructor(cfg) {
-      super();
-      this.animated = true;
-      this.options = void 0;
-      this._chart = void 0;
-      this._loop = void 0;
-      this._fullLoop = void 0;
-      this._path = void 0;
-      this._points = void 0;
-      this._segments = void 0;
-      this._decimated = false;
-      this._pointsUpdated = false;
-      this._datasetIndex = void 0;
-      if (cfg) {
-        Object.assign(this, cfg);
-      }
-    }
-    updateControlPoints(chartArea, indexAxis) {
-      const options = this.options;
-      if ((options.tension || options.cubicInterpolationMode === "monotone") && !options.stepped && !this._pointsUpdated) {
-        const loop = options.spanGaps ? this._loop : this._fullLoop;
-        _updateBezierControlPoints(this._points, options, chartArea, loop, indexAxis);
-        this._pointsUpdated = true;
-      }
-    }
-    set points(points) {
-      this._points = points;
-      delete this._segments;
-      delete this._path;
-      this._pointsUpdated = false;
-    }
-    get points() {
-      return this._points;
-    }
-    get segments() {
-      return this._segments || (this._segments = _computeSegments(this, this.options.segment));
-    }
-    first() {
-      const segments = this.segments;
-      const points = this.points;
-      return segments.length && points[segments[0].start];
-    }
-    last() {
-      const segments = this.segments;
-      const points = this.points;
-      const count = segments.length;
-      return count && points[segments[count - 1].end];
-    }
-    interpolate(point, property) {
-      const options = this.options;
-      const value = point[property];
-      const points = this.points;
-      const segments = _boundSegments(this, {
-        property,
-        start: value,
-        end: value
-      });
-      if (!segments.length) {
-        return;
-      }
-      const result = [];
-      const _interpolate = _getInterpolationMethod(options);
-      let i, ilen;
-      for (i = 0, ilen = segments.length; i < ilen; ++i) {
-        const { start, end } = segments[i];
-        const p1 = points[start];
-        const p2 = points[end];
-        if (p1 === p2) {
-          result.push(p1);
-          continue;
-        }
-        const t = Math.abs((value - p1[property]) / (p2[property] - p1[property]));
-        const interpolated = _interpolate(p1, p2, t, options.stepped);
-        interpolated[property] = point[property];
-        result.push(interpolated);
-      }
-      return result.length === 1 ? result[0] : result;
-    }
-    pathSegment(ctx, segment, params) {
-      const segmentMethod = _getSegmentMethod(this);
-      return segmentMethod(ctx, this, segment, params);
-    }
-    path(ctx, start, count) {
-      const segments = this.segments;
-      const segmentMethod = _getSegmentMethod(this);
-      let loop = this._loop;
-      start = start || 0;
-      count = count || this.points.length - start;
-      for (const segment of segments) {
-        loop &= segmentMethod(ctx, this, segment, {
-          start,
-          end: start + count - 1
-        });
-      }
-      return !!loop;
-    }
-    draw(ctx, chartArea, start, count) {
-      const options = this.options || {};
-      const points = this.points || [];
-      if (points.length && options.borderWidth) {
-        ctx.save();
-        draw(ctx, this, start, count);
-        ctx.restore();
-      }
-      if (this.animated) {
-        this._pointsUpdated = false;
-        this._path = void 0;
-      }
-    }
-  };
-  function inRange$1(el, pos, axis, useFinalPosition) {
-    const options = el.options;
-    const { [axis]: value } = el.getProps([
-      axis
+  function getBarBounds(bar, useFinalPosition) {
+    const { x, y, base, width, height } = bar.getProps([
+      "x",
+      "y",
+      "base",
+      "width",
+      "height"
     ], useFinalPosition);
-    return Math.abs(pos - value) < options.radius + options.hitRadius;
-  }
-  var PointElement = class extends Element {
-    static id = "point";
-    parsed;
-    skip;
-    stop;
-    /**
-    * @type {any}
-    */
-    static defaults = {
-      borderWidth: 1,
-      hitRadius: 1,
-      hoverBorderWidth: 1,
-      hoverRadius: 4,
-      pointStyle: "circle",
-      radius: 3,
-      rotation: 0
+    let left, right, top, bottom, half;
+    if (bar.horizontal) {
+      half = height / 2;
+      left = Math.min(x, base);
+      right = Math.max(x, base);
+      top = y - half;
+      bottom = y + half;
+    } else {
+      half = width / 2;
+      left = x - half;
+      right = x + half;
+      top = Math.min(y, base);
+      bottom = Math.max(y, base);
+    }
+    return {
+      left,
+      top,
+      right,
+      bottom
     };
-    /**
-    * @type {any}
-    */
+  }
+  function skipOrLimit(skip2, value, min, max) {
+    return skip2 ? 0 : _limitValue(value, min, max);
+  }
+  function parseBorderWidth(bar, maxW, maxH) {
+    const value = bar.options.borderWidth;
+    const skip2 = bar.borderSkipped;
+    const o = toTRBL(value);
+    return {
+      t: skipOrLimit(skip2.top, o.top, 0, maxH),
+      r: skipOrLimit(skip2.right, o.right, 0, maxW),
+      b: skipOrLimit(skip2.bottom, o.bottom, 0, maxH),
+      l: skipOrLimit(skip2.left, o.left, 0, maxW)
+    };
+  }
+  function parseBorderRadius(bar, maxW, maxH) {
+    const { enableBorderRadius } = bar.getProps([
+      "enableBorderRadius"
+    ]);
+    const value = bar.options.borderRadius;
+    const o = toTRBLCorners(value);
+    const maxR = Math.min(maxW, maxH);
+    const skip2 = bar.borderSkipped;
+    const enableBorder = enableBorderRadius || isObject(value);
+    return {
+      topLeft: skipOrLimit(!enableBorder || skip2.top || skip2.left, o.topLeft, 0, maxR),
+      topRight: skipOrLimit(!enableBorder || skip2.top || skip2.right, o.topRight, 0, maxR),
+      bottomLeft: skipOrLimit(!enableBorder || skip2.bottom || skip2.left, o.bottomLeft, 0, maxR),
+      bottomRight: skipOrLimit(!enableBorder || skip2.bottom || skip2.right, o.bottomRight, 0, maxR)
+    };
+  }
+  function boundingRects(bar) {
+    const bounds = getBarBounds(bar);
+    const width = bounds.right - bounds.left;
+    const height = bounds.bottom - bounds.top;
+    const border = parseBorderWidth(bar, width / 2, height / 2);
+    const radius = parseBorderRadius(bar, width / 2, height / 2);
+    return {
+      outer: {
+        x: bounds.left,
+        y: bounds.top,
+        w: width,
+        h: height,
+        radius
+      },
+      inner: {
+        x: bounds.left + border.l,
+        y: bounds.top + border.t,
+        w: width - border.l - border.r,
+        h: height - border.t - border.b,
+        radius: {
+          topLeft: Math.max(0, radius.topLeft - Math.max(border.t, border.l)),
+          topRight: Math.max(0, radius.topRight - Math.max(border.t, border.r)),
+          bottomLeft: Math.max(0, radius.bottomLeft - Math.max(border.b, border.l)),
+          bottomRight: Math.max(0, radius.bottomRight - Math.max(border.b, border.r))
+        }
+      }
+    };
+  }
+  function inRange(bar, x, y, useFinalPosition) {
+    const skipX = x === null;
+    const skipY = y === null;
+    const skipBoth = skipX && skipY;
+    const bounds = bar && !skipBoth && getBarBounds(bar, useFinalPosition);
+    return bounds && (skipX || _isBetween(x, bounds.left, bounds.right)) && (skipY || _isBetween(y, bounds.top, bounds.bottom));
+  }
+  function hasRadius(radius) {
+    return radius.topLeft || radius.topRight || radius.bottomLeft || radius.bottomRight;
+  }
+  function addNormalRectPath(ctx, rect) {
+    ctx.rect(rect.x, rect.y, rect.w, rect.h);
+  }
+  function inflateRect(rect, amount, refRect = {}) {
+    const x = rect.x !== refRect.x ? -amount : 0;
+    const y = rect.y !== refRect.y ? -amount : 0;
+    const w = (rect.x + rect.w !== refRect.x + refRect.w ? amount : 0) - x;
+    const h = (rect.y + rect.h !== refRect.y + refRect.h ? amount : 0) - y;
+    return {
+      x: rect.x + x,
+      y: rect.y + y,
+      w: rect.w + w,
+      h: rect.h + h,
+      radius: rect.radius
+    };
+  }
+  var BarElement = class extends Element {
+    static id = "bar";
+    static defaults = {
+      borderSkipped: "start",
+      borderWidth: 0,
+      borderRadius: 0,
+      inflateAmount: "auto",
+      pointStyle: void 0
+    };
     static defaultRoutes = {
       backgroundColor: "backgroundColor",
       borderColor: "borderColor"
@@ -9060,57 +9042,57 @@ ${i + 1} ${this.events[i]}`;
     constructor(cfg) {
       super();
       this.options = void 0;
-      this.parsed = void 0;
-      this.skip = void 0;
-      this.stop = void 0;
+      this.horizontal = void 0;
+      this.base = void 0;
+      this.width = void 0;
+      this.height = void 0;
+      this.inflateAmount = void 0;
       if (cfg) {
         Object.assign(this, cfg);
       }
+    }
+    draw(ctx) {
+      const { inflateAmount, options: { borderColor, backgroundColor } } = this;
+      const { inner, outer } = boundingRects(this);
+      const addRectPath = hasRadius(outer.radius) ? addRoundedRectPath : addNormalRectPath;
+      ctx.save();
+      if (outer.w !== inner.w || outer.h !== inner.h) {
+        ctx.beginPath();
+        addRectPath(ctx, inflateRect(outer, inflateAmount, inner));
+        ctx.clip();
+        addRectPath(ctx, inflateRect(inner, -inflateAmount, outer));
+        ctx.fillStyle = borderColor;
+        ctx.fill("evenodd");
+      }
+      ctx.beginPath();
+      addRectPath(ctx, inflateRect(inner, inflateAmount));
+      ctx.fillStyle = backgroundColor;
+      ctx.fill();
+      ctx.restore();
     }
     inRange(mouseX, mouseY, useFinalPosition) {
-      const options = this.options;
-      const { x, y } = this.getProps([
-        "x",
-        "y"
-      ], useFinalPosition);
-      return Math.pow(mouseX - x, 2) + Math.pow(mouseY - y, 2) < Math.pow(options.hitRadius + options.radius, 2);
+      return inRange(this, mouseX, mouseY, useFinalPosition);
     }
     inXRange(mouseX, useFinalPosition) {
-      return inRange$1(this, mouseX, "x", useFinalPosition);
+      return inRange(this, mouseX, null, useFinalPosition);
     }
     inYRange(mouseY, useFinalPosition) {
-      return inRange$1(this, mouseY, "y", useFinalPosition);
+      return inRange(this, null, mouseY, useFinalPosition);
     }
     getCenterPoint(useFinalPosition) {
-      const { x, y } = this.getProps([
+      const { x, y, base, horizontal } = this.getProps([
         "x",
-        "y"
+        "y",
+        "base",
+        "horizontal"
       ], useFinalPosition);
       return {
-        x,
-        y
+        x: horizontal ? (x + base) / 2 : x,
+        y: horizontal ? y : (y + base) / 2
       };
     }
-    size(options) {
-      options = options || this.options || {};
-      let radius = options.radius || 0;
-      radius = Math.max(radius, radius && options.hoverRadius || 0);
-      const borderWidth = radius && options.borderWidth || 0;
-      return (radius + borderWidth) * 2;
-    }
-    draw(ctx, area) {
-      const options = this.options;
-      if (this.skip || options.radius < 0.1 || !_isPointInArea(this, area, this.size(options) / 2)) {
-        return;
-      }
-      ctx.strokeStyle = options.borderColor;
-      ctx.lineWidth = options.borderWidth;
-      ctx.fillStyle = options.backgroundColor;
-      drawPoint(ctx, options, this.x, this.y);
-    }
-    getRange() {
-      const options = this.options || {};
-      return options.radius + options.hitRadius;
+    getRange(axis) {
+      return axis === "x" ? this.width / 2 : this.height / 2;
     }
   };
   var getBoxSize = (labelOpts, fontSize) => {
@@ -9661,6 +9643,143 @@ ${i + 1} ${this.events[i]}`;
           "sort"
         ].includes(name)
       }
+    }
+  };
+  var Title = class extends Element {
+    constructor(config) {
+      super();
+      this.chart = config.chart;
+      this.options = config.options;
+      this.ctx = config.ctx;
+      this._padding = void 0;
+      this.top = void 0;
+      this.bottom = void 0;
+      this.left = void 0;
+      this.right = void 0;
+      this.width = void 0;
+      this.height = void 0;
+      this.position = void 0;
+      this.weight = void 0;
+      this.fullSize = void 0;
+    }
+    update(maxWidth, maxHeight) {
+      const opts = this.options;
+      this.left = 0;
+      this.top = 0;
+      if (!opts.display) {
+        this.width = this.height = this.right = this.bottom = 0;
+        return;
+      }
+      this.width = this.right = maxWidth;
+      this.height = this.bottom = maxHeight;
+      const lineCount = isArray(opts.text) ? opts.text.length : 1;
+      this._padding = toPadding(opts.padding);
+      const textSize = lineCount * toFont(opts.font).lineHeight + this._padding.height;
+      if (this.isHorizontal()) {
+        this.height = textSize;
+      } else {
+        this.width = textSize;
+      }
+    }
+    isHorizontal() {
+      const pos = this.options.position;
+      return pos === "top" || pos === "bottom";
+    }
+    _drawArgs(offset) {
+      const { top, left, bottom, right, options } = this;
+      const align = options.align;
+      let rotation = 0;
+      let maxWidth, titleX, titleY;
+      if (this.isHorizontal()) {
+        titleX = _alignStartEnd(align, left, right);
+        titleY = top + offset;
+        maxWidth = right - left;
+      } else {
+        if (options.position === "left") {
+          titleX = left + offset;
+          titleY = _alignStartEnd(align, bottom, top);
+          rotation = PI * -0.5;
+        } else {
+          titleX = right - offset;
+          titleY = _alignStartEnd(align, top, bottom);
+          rotation = PI * 0.5;
+        }
+        maxWidth = bottom - top;
+      }
+      return {
+        titleX,
+        titleY,
+        maxWidth,
+        rotation
+      };
+    }
+    draw() {
+      const ctx = this.ctx;
+      const opts = this.options;
+      if (!opts.display) {
+        return;
+      }
+      const fontOpts = toFont(opts.font);
+      const lineHeight = fontOpts.lineHeight;
+      const offset = lineHeight / 2 + this._padding.top;
+      const { titleX, titleY, maxWidth, rotation } = this._drawArgs(offset);
+      renderText(ctx, opts.text, 0, 0, fontOpts, {
+        color: opts.color,
+        maxWidth,
+        rotation,
+        textAlign: _toLeftRightCenter(opts.align),
+        textBaseline: "middle",
+        translation: [
+          titleX,
+          titleY
+        ]
+      });
+    }
+  };
+  function createTitle(chart, titleOpts) {
+    const title = new Title({
+      ctx: chart.ctx,
+      options: titleOpts,
+      chart
+    });
+    layouts.configure(chart, title, titleOpts);
+    layouts.addBox(chart, title);
+    chart.titleBlock = title;
+  }
+  var plugin_title = {
+    id: "title",
+    _element: Title,
+    start(chart, _args, options) {
+      createTitle(chart, options);
+    },
+    stop(chart) {
+      const titleBlock = chart.titleBlock;
+      layouts.removeBox(chart, titleBlock);
+      delete chart.titleBlock;
+    },
+    beforeUpdate(chart, _args, options) {
+      const title = chart.titleBlock;
+      layouts.configure(chart, title, options);
+      title.options = options;
+    },
+    defaults: {
+      align: "center",
+      display: false,
+      font: {
+        weight: "bold"
+      },
+      fullSize: true,
+      padding: 10,
+      position: "top",
+      text: "",
+      weight: 2e3
+    },
+    defaultRoutes: {
+      color: "color"
+    },
+    descriptors: {
+      _scriptable: true,
+      _indexable: false
     }
   };
   var positioners = {
@@ -12315,7 +12434,7 @@ ${i + 1} ${this.events[i]}`;
   function limit(value, min, max) {
     return Math.max(Math.min(value, max), min);
   }
-  function parseBorderWidth(options, maxW, maxH) {
+  function parseBorderWidth2(options, maxW, maxH) {
     const value = options.borderWidth;
     let t, r, b, l;
     if (isObject(value)) {
@@ -12333,11 +12452,11 @@ ${i + 1} ${this.events[i]}`;
       l: limit(l, 0, maxW)
     };
   }
-  function boundingRects(element) {
+  function boundingRects2(element) {
     const bounds = getBounds(element, false);
     const width = bounds.right - bounds.left;
     const height = bounds.bottom - bounds.top;
-    const border = parseBorderWidth(element.options, width / 2, height / 2);
+    const border = parseBorderWidth2(element.options, width / 2, height / 2);
     return {
       outer: {
         x: bounds.left,
@@ -12353,7 +12472,7 @@ ${i + 1} ${this.events[i]}`;
       }
     };
   }
-  function inRange(element, x, y, useFinalPosition) {
+  function inRange2(element, x, y, useFinalPosition) {
     const skipX = x === null;
     const skipY = y === null;
     const bounds = !element || skipX && skipY ? false : getBounds(element, useFinalPosition);
@@ -12362,7 +12481,7 @@ ${i + 1} ${this.events[i]}`;
   var MatrixElement = class extends Element {
     draw(ctx) {
       const options = this.options;
-      const { inner, outer } = boundingRects(this);
+      const { inner, outer } = boundingRects2(this);
       const radius = toTRBLCorners(options.borderRadius);
       ctx.save();
       if (outer.w !== inner.w || outer.h !== inner.h) {
@@ -12400,13 +12519,13 @@ ${i + 1} ${this.events[i]}`;
       ctx.restore();
     }
     inRange(mouseX, mouseY, useFinalPosition) {
-      return inRange(this, mouseX, mouseY, useFinalPosition);
+      return inRange2(this, mouseX, mouseY, useFinalPosition);
     }
     inXRange(mouseX, useFinalPosition) {
-      return inRange(this, mouseX, null, useFinalPosition);
+      return inRange2(this, mouseX, null, useFinalPosition);
     }
     inYRange(mouseY, useFinalPosition) {
-      return inRange(this, null, mouseY, useFinalPosition);
+      return inRange2(this, null, mouseY, useFinalPosition);
     }
     getCenterPoint(useFinalPosition) {
       const { x, y, width, height } = this.getProps([
@@ -12445,11 +12564,11 @@ ${i + 1} ${this.events[i]}`;
     height: 20
   };
 
-  // src/app/charts/chartHelpers.ts
-  Chart.register(LineController, LineElement, PointElement, CategoryScale, LinearScale, plugin_tooltip, plugin_legend, MatrixController, MatrixElement);
+  // src/ui/charts/baseChart.ts
+  Chart.register(LinearScale, plugin_tooltip, plugin_legend, plugin_title);
   function getTickStepSize(numDays) {
     if (numDays <= 50) return 5;
-    if (numDays <= 150) return 10;
+    if (numDays <= 100) return 10;
     if (numDays <= 300) return 25;
     if (numDays <= 600) return 50;
     return 100;
@@ -12458,18 +12577,32 @@ ${i + 1} ${this.events[i]}`;
     responsive: true,
     maintainAspectRatio: false,
     animation: false,
+    events: ["click"],
     transitions: {
-      default: { animation: { duration: 0 } },
+      default: { animation: { duration: 0 } }
       // data updates (e.g. x-axis extension)
-      active: { animation: { duration: 0 } }
-      // hover
     }
   };
-  var BaseChart = class {
+  var BaseChart = class _BaseChart {
     constructor(canvasId) {
       this.canvasId = canvasId;
     }
     chart;
+    static MAX_DAYS = 550;
+    static TARGET_DAYS = 500;
+    getPruneExcess(currentDays) {
+      if (currentDays >= _BaseChart.MAX_DAYS) {
+        return currentDays - _BaseChart.TARGET_DAYS - 1;
+      }
+      return 0;
+    }
+    getXRange(firstDay, lastDay) {
+      const start = firstDay ?? 0;
+      const end = lastDay ?? 0;
+      const min = Math.floor(start / 50) * 50;
+      const max = Math.ceil(end / 50) * 50;
+      return { min, max: Math.max(min + 50, max) };
+    }
     getCanvas() {
       return document.getElementById(this.canvasId);
     }
@@ -12480,66 +12613,27 @@ ${i + 1} ${this.events[i]}`;
       return true;
     }
   };
-  var LineChart = class extends BaseChart {
-    constructor(canvasId, yLabel, yMin, getDatasets) {
-      super(canvasId);
-      this.yLabel = yLabel;
-      this.yMin = yMin;
-      this.getDatasets = getDatasets;
-    }
-    update(dayMetrics) {
-      const labels = dayMetrics.map((m) => m.day.toString());
-      const datasets = this.getDatasets(dayMetrics);
-      const stepSize = getTickStepSize(dayMetrics.length);
-      const xTicks = { callback: (_, index) => index % stepSize === 0 ? labels[index] : null };
-      if (!this.chart) {
-        if (!this.initializeChart({
-          type: "line",
-          data: {
-            labels,
-            datasets: datasets.map((ds) => ({
-              label: ds.label,
-              data: ds.data,
-              borderColor: ds.borderColor,
-              borderWidth: 1.5,
-              fill: false,
-              spanGaps: ds.spanGaps ?? false,
-              pointRadius: 0.5
-            }))
-          },
-          options: {
-            ...baseChartOptions,
-            scales: {
-              x: { title: { display: false }, ticks: xTicks },
-              y: {
-                title: { display: true, text: this.yLabel },
-                ...this.yMin !== void 0 ? { min: this.yMin } : {}
-              }
-            }
-          }
-        })) return;
-      } else {
-        this.chart.data.labels = labels;
-        for (let i = 0; i < datasets.length; i++) {
-          this.chart.data.datasets[i].data = datasets[i].data;
-        }
-        this.chart.options.scales.x.ticks = xTicks;
-        this.chart.update();
-      }
-    }
-  };
+
+  // src/ui/charts/matrixChart.ts
+  Chart.register(MatrixController, MatrixElement);
   var MatrixChart = class extends BaseChart {
-    constructor(canvasId, labelA, labelB, rgbColor, getGeneMetrics, relative) {
+    constructor(canvasId, geneLabel, lowLabel, highLabel, hue2, getGeneMetrics, relative) {
       super(canvasId);
-      this.labelA = labelA;
-      this.labelB = labelB;
-      this.rgbColor = rgbColor;
+      this.geneLabel = geneLabel;
+      this.lowLabel = lowLabel;
+      this.highLabel = highLabel;
+      this.hue = hue2;
       this.getGeneMetrics = getGeneMetrics;
       this.relative = relative;
     }
-    update(dayMetrics) {
-      const data = [];
-      for (const m of dayMetrics) {
+    maxValue = 1;
+    cachedData = [];
+    update(newMetrics) {
+      const timelineMismatched = newMetrics.length > 0 && this.cachedData.length > 0 && newMetrics[0].day <= this.cachedData[this.cachedData.length - 1].x;
+      if (timelineMismatched) {
+        this.cachedData = [];
+      }
+      for (const m of newMetrics) {
         const geneMetrics = this.getGeneMetrics(m);
         const total = m.population.alive || 1;
         for (let bucket = 1; bucket <= 9; bucket++) {
@@ -12547,33 +12641,43 @@ ${i + 1} ${this.events[i]}`;
           if (this.relative) {
             value /= total;
           }
-          data.push({ x: m.day, y: bucket, v: value });
+          this.cachedData.push({ x: m.day, y: bucket, v: value });
         }
       }
-      const numDays = dayMetrics.length || 1;
-      const stepSize = getTickStepSize(numDays);
-      const maxValue = this.relative ? 1 : Math.max(...data.map((d) => d.v), 1);
-      const { labelA, labelB, rgbColor, relative } = this;
+      const excessDays = this.getPruneExcess(this.cachedData.length / 9);
+      if (excessDays > 0) {
+        this.cachedData.splice(0, excessDays * 9);
+      }
+      const data = this.cachedData;
+      const currentNumDays = this.cachedData.length / 9 || 1;
+      const stepSize = getTickStepSize(currentNumDays);
+      const { min, max } = this.getXRange(this.cachedData[0]?.x, this.cachedData[this.cachedData.length - 1]?.x);
+      this.maxValue = this.relative ? 1 : Math.max(...data.map((d) => d.v), 1);
+      const { geneLabel, lowLabel, highLabel, hue: hue2, relative } = this;
       if (!this.chart) {
         if (!this.initializeChart({
           type: "matrix",
           data: {
             datasets: [{
-              label: `${labelA} or ${labelB} ${relative ? "(relative)" : "(absolute)"}`,
+              label: `${geneLabel} ${relative ? "(relative)" : "(absolute)"}`,
               data,
-              backgroundColor(context) {
-                const v = context.dataset.data[context.dataIndex].v;
-                return Color.rgbToRgba(rgbColor, v / maxValue);
+              backgroundColor: (ctx) => {
+                const point = ctx.raw;
+                if (!point) return "transparent";
+                const lightness = 1 - point.v / this.maxValue * 0.5;
+                const [r, g, b] = Color.hslToRgb(hue2, Color.defaultSaturation, lightness);
+                return `rgb(${r}, ${g}, ${b})`;
               },
-              borderColor: Color.rgbToRgba(rgbColor, 0.15),
-              borderWidth: 1,
+              borderWidth: 0,
+              parsing: false,
+              normalized: true,
               width: ({ chart: c }) => {
                 const area = c.chartArea;
-                return area ? Math.max(2, area.width / numDays - 1) : 10;
+                return area ? Math.max(2, area.width / currentNumDays) : 10;
               },
               height: ({ chart: c }) => {
                 const area = c.chartArea;
-                return area ? Math.max(2, area.height / 10 - 1) : 10;
+                return area ? Math.max(2, area.height / 10) : 10;
               }
             }]
           },
@@ -12582,9 +12686,12 @@ ${i + 1} ${this.events[i]}`;
             scales: {
               x: {
                 type: "linear",
-                offset: true,
+                offset: false,
                 title: { display: false },
-                ticks: { stepSize }
+                ticks: { stepSize },
+                grid: { display: false },
+                min,
+                max
               },
               y: {
                 type: "linear",
@@ -12593,445 +12700,214 @@ ${i + 1} ${this.events[i]}`;
                 max: 9,
                 reverse: false,
                 ticks: { stepSize: 1 },
-                title: { display: true, text: `${labelA} <---> ${labelB}` }
+                title: { display: true, text: `${lowLabel} <-> ${highLabel}` },
+                grid: { display: false }
               }
             },
             plugins: {
-              tooltip: {
-                callbacks: {
-                  title: () => `${labelA} or ${labelB} ${relative ? "(relative)" : "(absolute)"}$`,
-                  label(context) {
-                    const d = context.dataset.data[context.dataIndex];
-                    if (relative) {
-                      return `Day ${d.x}, Bucket ${d.y}: ${(d.v * 100).toFixed(1)}%`;
-                    } else {
-                      return `Day ${d.x}, Bucket ${d.y}: ${d.v}`;
-                    }
-                  }
-                }
-              }
+              title: { display: true, text: geneLabel },
+              legend: { display: false },
+              tooltip: { enabled: false }
             }
           }
         })) return;
       } else {
         this.chart.data.datasets[0].data = data;
-        this.chart.data.datasets[0].backgroundColor = (context) => {
-          const v = context.dataset.data[context.dataIndex].v;
-          return Color.rgbToRgba(rgbColor, v / maxValue);
-        };
         this.chart.data.datasets[0].width = ({ chart: c }) => {
           const area = c.chartArea;
-          return area ? Math.max(2, area.width / numDays - 1) : 10;
+          return area ? Math.max(2, area.width / currentNumDays) : 10;
         };
-        this.chart.options.scales.x.ticks = { stepSize };
+        this.chart.options.scales.x.ticks.stepSize = stepSize;
+        this.chart.options.scales.x.min = min;
+        this.chart.options.scales.x.max = max;
         this.chart.update();
       }
     }
   };
 
-  // src/app/charts/charts.ts
-  var Charts = class {
-    charts;
+  // src/ui/charts/stackedBarChart.ts
+  Chart.register(BarController, BarElement, CategoryScale);
+  var StackedBarChart = class _StackedBarChart extends BaseChart {
+    constructor(canvasId, title, yLabel, series) {
+      super(canvasId);
+      this.title = title;
+      this.yLabel = yLabel;
+      this.series = series;
+      this.cachedDatasets = series.map(() => []);
+    }
+    cachedDays = [];
+    cachedDatasets = [];
+    static fromDistribution(canvasId, title, yLabel, bucketCount, getBuckets, colors2) {
+      if (colors2.length != bucketCount) {
+        console.warn(`Expected ${bucketCount} colors but received ${colors2.length} colors.`);
+      }
+      return new _StackedBarChart(
+        canvasId,
+        title,
+        yLabel,
+        Array.from({ length: bucketCount }, (_, i) => ({
+          label: String(i + 1),
+          getValue: (m) => getBuckets(m)[i] ?? 0,
+          color: colors2[i]
+        }))
+      );
+    }
+    update(newMetrics) {
+      const timelineMismatched = newMetrics.length > 0 && this.cachedDays.length > 0 && newMetrics[0].day <= this.cachedDays[this.cachedDays.length - 1];
+      if (timelineMismatched) {
+        this.cachedDays = [];
+        this.cachedDatasets = this.series.map(() => []);
+      }
+      for (const m of newMetrics) {
+        this.cachedDays.push(m.day);
+        for (let s = 0; s < this.series.length; s++) {
+          this.cachedDatasets[s].push({ x: m.day, y: this.series[s].getValue(m) });
+        }
+      }
+      const excess = this.getPruneExcess(this.cachedDays.length);
+      if (excess > 0) {
+        this.cachedDays.splice(0, excess);
+        for (let s = 0; s < this.series.length; s++) {
+          this.cachedDatasets[s].splice(0, excess);
+        }
+      }
+      const numDays = this.cachedDays.length || 1;
+      const stepSize = getTickStepSize(numDays);
+      const { min, max } = this.getXRange(this.cachedDays[0], this.cachedDays[this.cachedDays.length - 1]);
+      if (!this.chart) {
+        if (!this.initializeChart({
+          type: "bar",
+          data: {
+            datasets: this.series.map((s, i) => ({
+              label: s.label,
+              data: this.cachedDatasets[i],
+              backgroundColor: s.color,
+              borderWidth: 0
+            }))
+          },
+          options: {
+            ...baseChartOptions,
+            barPercentage: 1,
+            categoryPercentage: 1,
+            plugins: {
+              title: { display: !!this.title, text: this.title },
+              tooltip: { enabled: false }
+            },
+            scales: {
+              x: {
+                type: "linear",
+                stacked: true,
+                offset: false,
+                title: { display: false },
+                ticks: { stepSize },
+                min,
+                max
+              },
+              y: { stacked: true, title: { display: true, text: this.yLabel } }
+            }
+          }
+        })) return;
+      } else {
+        if (this.chart.data.datasets.length !== this.series.length) {
+          this.chart.data.datasets = this.series.map((s, i) => ({
+            label: s.label,
+            data: this.cachedDatasets[i],
+            backgroundColor: s.color,
+            borderWidth: 0
+          }));
+        } else {
+          for (let i = 0; i < this.series.length; i++) {
+            this.chart.data.datasets[i].data = this.cachedDatasets[i];
+          }
+        }
+        this.chart.options.scales.x.ticks.stepSize = stepSize;
+        this.chart.options.scales.x.min = min;
+        this.chart.options.scales.x.max = max;
+        this.chart.update();
+      }
+    }
+  };
+
+  // src/ui/chartSections.ts
+  var ChartSections = class {
+    sections;
     constructor() {
-      this.charts = [
-        [
-          new LineChart("population-chart", "Count", void 0, (m) => [
-            { label: "Alive", data: m.map((d) => d.population.alive), borderColor: Color.neutral }
-          ]),
-          new LineChart("diet-chart", "Count", 0, (m) => [
-            { label: "Herbivore", data: m.map((d) => d.dietDistribution.herbivore), borderColor: Color.herbivore },
-            { label: "Omnivore", data: m.map((d) => d.dietDistribution.omnivore), borderColor: Color.omnivore },
-            { label: "Carnivore", data: m.map((d) => d.dietDistribution.carnivore), borderColor: Color.carnivore }
-          ])
-        ],
-        [
-          new LineChart("growth-chart", "Count", void 0, (m) => [
-            { label: "Population growth", data: m.map((d) => d.population.born - d.population.dead), borderColor: Color.good }
-          ]),
-          new LineChart("born-died-chart", "Count", void 0, (m) => [
-            { label: "Born", data: m.map((d) => d.population.born), borderColor: Color.good },
-            { label: "Died", data: m.map((d) => d.population.dead), borderColor: Color.bad }
-          ])
-        ],
-        [
-          new LineChart("deaths-chart", "Count", void 0, (m) => [
-            { label: "Eaten", data: m.map((d) => d.eatenStarved.eaten), borderColor: Color.carnivore },
-            { label: "Starved", data: m.map((d) => d.eatenStarved.starved), borderColor: Color.omnivore }
-          ]),
-          new LineChart("food-chart", "Food", 0, (m) => [
-            { label: "Food at start", data: m.map((d) => d.food.grown), borderColor: Color.good },
-            { label: "Food unused at end", data: m.map((d) => d.food.remaining), borderColor: Color.neutral }
-          ])
-        ],
-        [
-          new LineChart("eaten-details-chart", "Count", void 0, (m) => [
-            { label: "Eaten herbivores", data: m.map((d) => d.eatenStarved.eatenHerbivore), borderColor: Color.herbivore },
-            { label: "Eaten omnivores", data: m.map((d) => d.eatenStarved.eatenOmnivore), borderColor: Color.omnivore },
-            { label: "Eaten carnivores", data: m.map((d) => d.eatenStarved.eatenCarnivore), borderColor: Color.carnivore }
-          ]),
-          new LineChart("starved-details-chart", "Count", void 0, (m) => [
-            { label: "Starved herbivores", data: m.map((d) => d.eatenStarved.starvedHerbivore), borderColor: Color.herbivore },
-            { label: "Starved omnivores", data: m.map((d) => d.eatenStarved.starvedOmnivore), borderColor: Color.omnivore },
-            { label: "Starved carnivores", data: m.map((d) => d.eatenStarved.starvedCarnivore), borderColor: Color.carnivore }
-          ])
-        ],
-        [
-          new LineChart("age-living-chart", "Age (days)", 0, (m) => [
-            { label: "Avg age (living)", data: m.map((d) => d.age.averageLiving), borderColor: Color.neutral, spanGaps: true },
-            { label: "Oldest (living)", data: m.map((d) => d.age.oldest), borderColor: Color.good, spanGaps: true }
-          ]),
-          new LineChart("age-death-chart", "Age (days)", 0, (m) => [
-            { label: "Avg age of death", data: m.map((d) => d.age.averageDeath), borderColor: Color.neutral, spanGaps: true },
-            { label: "Oldest age of death", data: m.map((d) => d.age.oldestDeath), borderColor: Color.bad, spanGaps: true }
-          ])
-        ],
-        [
-          new LineChart("alive-offspring-chart", "Offspring", 0, (m) => [
-            { label: "Avg alive offspring", data: m.map((d) => d.offspring.averageAlive), borderColor: Color.neutral, spanGaps: true },
-            { label: "Max alive offspring", data: m.map((d) => d.offspring.maxAlive), borderColor: Color.good, spanGaps: true }
-          ]),
-          new LineChart("total-offspring-chart", "Offspring", 0, (m) => [
-            { label: "Avg total offspring", data: m.map((d) => d.offspring.averageTotal), borderColor: Color.neutral, spanGaps: true },
-            { label: "Max total offspring", data: m.map((d) => d.offspring.maxTotal), borderColor: Color.bad, spanGaps: true }
-          ])
-        ],
-        [
-          new LineChart("action-plant-success-chart", "Count", 0, (m) => [
-            { label: "Eat plant success", data: m.map((d) => d.actions.eatPlantSuccess), borderColor: Color.good },
-            { label: "Eat plant fail", data: m.map((d) => d.actions.eatPlantFail), borderColor: Color.bad }
-          ]),
-          new LineChart("action-meat-success-chart", "Count", 0, (m) => [
-            { label: "Eat meat success", data: m.map((d) => d.actions.eatMeatSuccess), borderColor: Color.good },
-            { label: "Eat meat fail", data: m.map((d) => d.actions.eatMeatFail), borderColor: Color.bad }
-          ])
-        ],
-        [
-          new LineChart("action-offspring-chart", "Count", 0, (m) => [
-            { label: "Offspring", data: m.map((d) => d.actions.offspringCounts.reduce((s, n) => s + n, 0)), borderColor: Color.good }
-          ])
-        ],
-        [
-          new MatrixChart("gene-plant-or-meat-chart-relative", "Plant", "Meat", Color.plantOrMeat, (m) => m.genetics.plantOrMeat, true),
-          new MatrixChart("gene-plant-or-meat-chart-absolute", "Plant", "Meat", Color.plantOrMeat, (m) => m.genetics.plantOrMeat, false)
-        ],
-        [
-          new MatrixChart("gene-eat-or-reproduce-chart-relative", "Eat", "Reproduce", Color.eatOrReproduce, (m) => m.genetics.eatOrReproduce, true),
-          new MatrixChart("gene-eat-or-reproduce-chart-absolute", "Eat", "Reproduce", Color.eatOrReproduce, (m) => m.genetics.eatOrReproduce, false)
-        ]
+      this.sections = [
+        {
+          name: "Diet & actions",
+          charts: [
+            StackedBarChart.fromDistribution("diet-chart", "Herbivores (1), omnivores (5), carnivores (9)", "Count", 9, (d) => d.dietDistribution.bucketCounts, Color.greenToRedRange),
+            new StackedBarChart("action-breakdown-chart", "Actions", "Count", [
+              { label: "Wait", getValue: (d) => d.actions.wait, color: Color.redPink },
+              { label: "Learn", getValue: (d) => d.actions.learn, color: Color.purple },
+              { label: "Reproduce", getValue: (d) => d.actions.reproduce, color: Color.blueSky },
+              { label: "Eat plant", getValue: (d) => d.actions.eatPlant, color: Color.green },
+              { label: "Eat meat", getValue: (d) => d.actions.eatMeat, color: Color.red }
+            ]),
+            new StackedBarChart("eat-plant-breakdown-chart", "Plant search breakdown", "Count", [
+              { label: "Uneaten plants", getValue: (d) => d.food.remaining, color: Color.greenTeal },
+              { label: "Found plant", getValue: (d) => d.actions.eatPlantSuccess, color: Color.green },
+              { label: "Not found", getValue: (d) => d.actions.eatPlantFail, color: Color.redPink }
+            ]),
+            new StackedBarChart("eat-meat-breakdown-chart", "Hunting breakdown", "Count", [
+              { label: "Prey escaped", getValue: (d) => d.actions.eatMeatFail, color: Color.redPink },
+              { label: "Prey caught", getValue: (d) => d.actions.eatMeatSuccess, color: Color.red }
+            ]),
+            new StackedBarChart("deaths-chart", "Deaths", "Count", [
+              { label: "Starved", getValue: (d) => d.eatenStarved.starved, color: Color.blue },
+              { label: "Eaten", getValue: (d) => d.eatenStarved.eaten, color: Color.red }
+            ])
+          ]
+        },
+        {
+          name: "Gene pool",
+          charts: [
+            new MatrixChart("gene-survive-or-learn-chart-relative", "Behaviour: Survive or Learn", "Survive", "Learn", Color.purpleHue, (m) => m.genetics.surviveOrLearn, true),
+            new MatrixChart("gene-eat-or-reproduce-chart-relative", "Behaviour: Eat or Reproduce", "Eat", "Reproduce", Color.orangeHue, (m) => m.genetics.eatOrReproduce, true),
+            new MatrixChart("gene-plant-or-meat-chart-relative", "Diet: Plant or Meat", "Plant", "Meat", Color.blueHue, (m) => m.genetics.plantOrMeat, true),
+            new MatrixChart("gene-find-plant-skill-chart-relative", "Skill: Find Plant", "Bad", "Good", Color.greenHue, (m) => m.genetics.findPlantSkill, true),
+            new MatrixChart("gene-hunt-skill-chart-relative", "Skill: Hunt", "Bad", "Good", Color.redHue, (m) => m.genetics.huntSkill, true),
+            new MatrixChart("gene-alertness-trait-chart-relative", "Trait: Alertness", "Bad", "Good", Color.blueHue, (m) => m.genetics.alertnessTrait, true),
+            new MatrixChart("gene-size-trait-chart-relative", "Trait: Size", "Small", "Large", Color.yellowHue, (m) => m.genetics.sizeTrait, true)
+          ]
+        }
       ];
       this.buildDOM();
     }
     buildDOM() {
       const container = document.getElementById("charts");
-      for (const group of this.charts) {
-        const pair = document.createElement("div");
-        pair.className = "chart-pair";
-        for (const chart of group) {
+      for (const section of this.sections) {
+        const heading = document.createElement("h3");
+        heading.textContent = section.name;
+        container.appendChild(heading);
+        const sectionElement = document.createElement("div");
+        sectionElement.className = "chart-section";
+        for (const chart of section.charts) {
           const chartContainer = document.createElement("div");
           chartContainer.className = "chart-container";
+          if (chart instanceof MatrixChart) {
+            chartContainer.classList.add("small-chart");
+          } else {
+            chartContainer.classList.add("normal-chart");
+          }
           const canvas = document.createElement("canvas");
           canvas.id = chart.canvasId;
           chartContainer.appendChild(canvas);
-          pair.appendChild(chartContainer);
+          sectionElement.appendChild(chartContainer);
         }
-        container.appendChild(pair);
+        container.appendChild(sectionElement);
       }
     }
     update(dayMetrics) {
-      for (const group of this.charts) {
-        for (const chart of group) {
+      for (const section of this.sections) {
+        for (const chart of section.charts) {
           chart.update(dayMetrics);
         }
       }
     }
   };
 
-  // src/simulation/actions/action.ts
-  var Action = class {
-    individual;
-    constructor(individual) {
-      this.individual = individual;
-    }
-  };
-
-  // src/simulation/actions/act.ts
-  var WaitAction = class extends Action {
-    name = "Wait";
-    isPossible(state) {
-      return true;
-    }
-    execute(state) {
-      return EnergyConstants.anyAction;
-    }
-    toString() {
-      return `\u{1F4A4}`;
-    }
-  };
-  var EatPlantAction = class extends Action {
-    name = "Herbivore";
-    succesful = false;
-    isPossible(state) {
-      return true;
-    }
-    execute(state) {
-      if (state.environment.remainingFood > 0) {
-        const eatPlantSkill = 1 - this.individual.brain.plantOrMeat.value;
-        let attempts = Constants.foodAttempts;
-        if (attempts > state.environment.remainingFood) {
-          attempts = state.environment.remainingFood;
-        }
-        while (attempts > 0) {
-          attempts--;
-          const gatherSucces = Math.random() < eatPlantSkill;
-          if (gatherSucces) {
-            this.succesful = true;
-            state.environment.remainingFood--;
-            return EnergyConstants.anyAction + EnergyConstants.eatPlantAction;
-          }
-        }
-      }
-      this.succesful = false;
-      return EnergyConstants.anyAction;
-    }
-    toString() {
-      return `\u{1F955} ${this.succesful ? "\u2714\uFE0F" : "\u274C"}`;
-    }
-  };
-  var EatMeatAction = class extends Action {
-    name = "Carnivore";
-    victim = null;
-    isPossible(state) {
-      return true;
-    }
-    isPossibleVictim(victim) {
-      if (victim.deathDay) {
-        return false;
-      }
-      if (victim.id === this.individual.id) {
-        return false;
-      }
-      if (victim.id === this.individual.parent?.id) {
-        return false;
-      }
-      if (victim.parent?.id === this.individual.id) {
-        return false;
-      }
-      return true;
-    }
-    execute(state) {
-      const eatMeatSkill = this.individual.brain.plantOrMeat.value;
-      let attempts = Constants.foodAttempts;
-      if (attempts > state.individuals.length) {
-        attempts = state.individuals.length;
-      }
-      while (attempts > 0) {
-        attempts--;
-        let victim = state.individuals[Math.floor(Math.random() * state.individuals.length)];
-        if (!this.isPossibleVictim(victim)) {
-          continue;
-        }
-        var victimSkill = Math.abs(0.5 - victim.brain.plantOrMeat.value) * 2;
-        const skillDifference = eatMeatSkill - victimSkill;
-        const succes = Math.random() < skillDifference;
-        if (succes) {
-          this.victim = victim;
-          victim.dieEaten(state.day, this.individual.id);
-          return EnergyConstants.anyAction + EnergyConstants.eatMeatAction;
-        }
-      }
-      return EnergyConstants.anyAction;
-    }
-    toString() {
-      let victimId = this.victim ? this.victim.id : "\u274C";
-      return `\u{1F969} ${victimId}`;
-    }
-  };
-  var ReproduceAction = class extends Action {
-    name = "Reproduce";
-    cloneIds = [];
-    isPossible(state) {
-      const isAdult = this.individual.getAge(state.day) >= Constants.reproductiveAge;
-      const hasEnergyConstants = this.individual.energy > EnergyConstants.bufferForReproduction;
-      return isAdult && hasEnergyConstants;
-    }
-    execute(state) {
-      const spendableEnergyConstants = Math.floor(this.individual.energy - EnergyConstants.bufferForReproduction);
-      const numberOfChildren = Math.min(Constants.maxChildrenPerReproduction, spendableEnergyConstants);
-      for (let i = 0; i < numberOfChildren; i++) {
-        const baby = this.individual.createChild(state.day);
-        state.saveIndividual(baby);
-        this.cloneIds.push(baby.id);
-      }
-      return EnergyConstants.anyAction + EnergyConstants.reproductionPerChild * numberOfChildren;
-    }
-    toString() {
-      return `\u{1F476} ${this.cloneIds.join(" ")}`;
-    }
-  };
-
-  // src/simulation/actions/decide.ts
-  function decide(aOrB, actionA, actionB, state) {
-    const possibleA = actionA.isPossible(state);
-    const possibleB = actionB.isPossible(state);
-    if (possibleA && possibleB) {
-      return Math.random() < aOrB ? actionB : actionA;
-    } else if (possibleA) {
-      return actionA;
-    } else if (possibleB) {
-      return actionB;
-    } else {
-      return null;
-    }
-  }
-  var MainAction = class extends Action {
-    name = "Main";
-    chosenAction = null;
-    isPossible(state) {
-      return !this.individual.deathDay && this.individual.getAge(state.day) > 1;
-    }
-    execute(state) {
-      const eatAction = new EatAction(this.individual);
-      const reproduceAction = new ReproduceAction(this.individual);
-      const eatOrReproduce = this.individual.brain.eatOrReproduce.value;
-      this.chosenAction = decide(eatOrReproduce, eatAction, reproduceAction, state) || new WaitAction(this.individual);
-      const gainedEnergy = this.chosenAction.execute(state);
-      this.individual.events.push(this.chosenAction.toString());
-      return gainedEnergy;
-    }
-    toString() {
-      return "";
-    }
-  };
-  var EatAction = class extends Action {
-    name = "Eat";
-    chosenAction = null;
-    isPossible(state) {
-      const hungry = this.individual.hasHunger();
-      return hungry;
-    }
-    execute(state) {
-      const plantOrMeat = this.individual.brain.plantOrMeat.value;
-      this.chosenAction = decide(
-        plantOrMeat,
-        new EatPlantAction(this.individual),
-        new EatMeatAction(this.individual),
-        state
-      ) || new WaitAction(this.individual);
-      return this.chosenAction.execute(state);
-    }
-    toString() {
-      return this.chosenAction ? this.chosenAction.toString() : "";
-    }
-  };
-
-  // src/app/iterations.ts
-  var Iterations = class {
-    state;
-    constructor(state) {
-      this.state = state;
-    }
-    execute(iterations) {
-      for (let i = 0; i < iterations; i++) {
-        this.state.archiveDeadIndividuals();
-        this.state.day++;
-        this.state.updateEnvironment();
-        const actionMetrics = this.actAllIndividuals();
-        this.starveIndividuals();
-        this.state.metrics.addDayMetrics(this.state, actionMetrics);
-        const allDead = this.state.individuals.filter((individual) => !individual.deathDay).length == 0;
-        if (allDead) {
-          const anyDiedToday = this.state.individuals.filter((individual) => individual.deathDay == this.state.day).length > 0;
-          if (anyDiedToday) {
-            alert("All individuals have died. Reload the page for a new simulation.");
-          }
-          return false;
-        }
-      }
-      return true;
-    }
-    actAllIndividuals() {
-      const actionMetrics = new ActionMetrics();
-      const individuals = this.state.individuals;
-      for (let i = individuals.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [individuals[i], individuals[j]] = [individuals[j], individuals[i]];
-      }
-      for (const individual of individuals) {
-        const mainAction = new MainAction(individual);
-        if (mainAction.isPossible(this.state)) {
-          const gainedEnergy = mainAction.execute(this.state);
-          this.recordActionStats(mainAction, actionMetrics);
-          individual.energy += gainedEnergy;
-          if (individual.energy > EnergyConstants.max) {
-            individual.energy = EnergyConstants.max;
-          }
-        }
-      }
-      return actionMetrics;
-    }
-    recordActionStats(mainAction, actionMetrics) {
-      const chosen = mainAction.chosenAction;
-      if (chosen instanceof EatAction) {
-        const leafAction = chosen.chosenAction;
-        if (leafAction instanceof EatPlantAction) {
-          if (leafAction.succesful) actionMetrics.eatPlantSuccess++;
-          else actionMetrics.eatPlantFail++;
-        } else if (leafAction instanceof EatMeatAction) {
-          if (leafAction.victim) actionMetrics.eatMeatSuccess++;
-          else actionMetrics.eatMeatFail++;
-        }
-      } else if (chosen instanceof ReproduceAction) {
-        actionMetrics.offspringCounts.push(chosen.cloneIds.length);
-      } else if (chosen instanceof WaitAction) {
-        actionMetrics.wait++;
-      }
-    }
-    starveIndividuals() {
-      let starvedIndividuals = 0;
-      for (let individual of this.state.individuals) {
-        if (individual.energy <= 0 && !individual.deathDay && individual.getAge(this.state.day) > 0) {
-          individual.dieStarved(this.state.day);
-          starvedIndividuals++;
-        }
-      }
-    }
-  };
-
-  // src/app/iterationLoop.ts
-  var IterationLoop = class {
-    iterations;
-    playInterval = void 0;
-    onUpdate = () => {
-    };
-    constructor(iterations) {
-      this.iterations = iterations;
-    }
-    playSlow() {
-      this.pause();
-      this.startInterval(false);
-    }
-    playFast() {
-      this.pause();
-      this.startInterval(true);
-    }
-    pause() {
-      clearInterval(this.playInterval);
-      this.playInterval = void 0;
-    }
-    startInterval(fast) {
-      const wait = fast ? 100 : 200;
-      const iterationsAmount = fast ? 5 : 1;
-      this.playInterval = setInterval(() => {
-        const continueLoop = this.iterations.execute(iterationsAmount);
-        this.onUpdate();
-        if (!continueLoop) {
-          this.pause();
-        }
-      }, wait);
-    }
-  };
-
-  // src/app/ui/ui.ts
+  // src/ui/ui.ts
   window.onload = () => new UI();
   var UI = class {
     state;
@@ -13044,7 +12920,7 @@ ${i + 1} ${this.events[i]}`;
       this.iterations = new Iterations(this.state);
       this.loop = new IterationLoop(this.iterations);
       this.loop.onUpdate = () => this.updateUI();
-      this.charts = new Charts();
+      this.charts = new ChartSections();
       this.updateUI();
       this.addButtonListeners();
     }
@@ -13052,6 +12928,7 @@ ${i + 1} ${this.events[i]}`;
       document.getElementById("next-1-btn").addEventListener("click", () => this.nextIteration(1));
       document.getElementById("next-10-btn").addEventListener("click", () => this.nextIteration(10));
       document.getElementById("next-100-btn").addEventListener("click", () => this.nextIteration(100));
+      document.getElementById("next-500-btn").addEventListener("click", () => this.nextIteration(500));
       document.getElementById("play-slow-btn").addEventListener("click", () => this.togglePlaySlow());
       document.getElementById("play-fast-btn").addEventListener("click", () => this.togglePlayFast());
     }
@@ -13088,13 +12965,8 @@ ${i + 1} ${this.events[i]}`;
       this.updateUI();
     }
     updateUI() {
-      this.updateTitles();
-      new IndividualsDetails(this.state.individuals, this.state.day).showIndividuals();
-      this.charts.update(this.state.metrics.dayMetrics);
-    }
-    updateTitles() {
       document.getElementById("iteration-title").innerText = `Iteration ${this.state.day}`;
-      document.getElementById("individuals-title").innerText = `Individuals (${this.state.individuals.length})`;
+      this.charts.update(this.state.metrics.flush());
     }
   };
 })();

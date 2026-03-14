@@ -1,4 +1,4 @@
-import { Gene } from "./gene.js";
+import { Gene } from "@simulation/genetics/gene.js";
 
 export class Chromosome {
 
@@ -14,10 +14,10 @@ export class Chromosome {
         return Object.keys(this.genes).map(key => this.genes[key].toString()).join("");
     }
 
-    mutatedCopy(): this {
+    mutatedCopy(invert: boolean): this {
         const newGenes: { [key: string]: Gene } = {};
         for (const key of Object.keys(this.genes)) {
-            newGenes[key] = this.genes[key].mutated();
+            newGenes[key] = this.genes[key].mutated(invert);
         }
         return new (this.constructor as new (genes: { [key: string]: Gene }) => this)(newGenes);
     }

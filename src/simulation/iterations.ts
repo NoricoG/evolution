@@ -1,8 +1,7 @@
-import { EatPlantAction, EatMeatAction, ReproduceAction, WaitAction } from "../simulation/actions/act.js";
-import { EatAction, MainAction } from "../simulation/actions/decide.js";
-import { EnergyConstants } from "../simulation/constants.js";
-import { State } from "../simulation/state.js";
-import { ActionMetrics } from "./charts/metrics.js";
+import { EnergyConstants } from "@simulation/constants.js";
+import { MainDecision } from "@simulation/actions/decision.js";
+import { ActionMetrics } from "@simulation/metrics.js";
+import { State } from "@simulation/state.js";
 
 export class Iterations {
 
@@ -15,16 +14,22 @@ export class Iterations {
     execute(iterations: number): boolean {
         for (let i = 0; i < iterations; i++) {
             this.state.archiveDeadIndividuals();
+
+            this.state.metrics.addnewDay();
             this.state.day++;
 
             this.state.updateEnvironment();
 
+            for (const individual of this.state.individuals) {
+                individual.extraAlertness = 0;
+            }
+
             const actionMetrics = this.actAllIndividuals();
             this.starveIndividuals();
 
-            this.state.metrics.addDayMetrics(this.state, actionMetrics);
+            this.state.metrics.calculateRemainingMetrics(this.state);
 
-            const allDead = this.state.individuals.filter(individual => !individual.deathDay).length == 0;
+            const allDead = this.state.individuals.filter(individual => individual.deathDay == null).length == 0;
             if (allDead) {
                 const anyDiedToday = this.state.individuals.filter(individual => individual.deathDay == this.state.day).length > 0;
                 if (anyDiedToday) {
@@ -47,10 +52,9 @@ export class Iterations {
         }
 
         for (const individual of individuals) {
-            const mainAction = new MainAction(individual);
-            if (mainAction.isPossible(this.state)) {
-                const gainedEnergy = mainAction.execute(this.state);
-                this.recordActionStats(mainAction, actionMetrics);
+            const mainDecision = new MainDecision(individual);
+            if (mainDecision.isPossible(this.state)) {
+                const gainedEnergy = mainDecision.execute(this.state);
 
                 individual.energy += gainedEnergy;
                 if (individual.energy > EnergyConstants.max) {
@@ -62,29 +66,11 @@ export class Iterations {
         return actionMetrics;
     }
 
-    private recordActionStats(mainAction: MainAction, actionMetrics: ActionMetrics) {
-        const chosen = mainAction.chosenAction;
-        if (chosen instanceof EatAction) {
-            const leafAction = chosen.chosenAction;
-            if (leafAction instanceof EatPlantAction) {
-                if (leafAction.succesful) actionMetrics.eatPlantSuccess++;
-                else actionMetrics.eatPlantFail++;
-            } else if (leafAction instanceof EatMeatAction) {
-                if (leafAction.victim) actionMetrics.eatMeatSuccess++;
-                else actionMetrics.eatMeatFail++;
-            }
-        } else if (chosen instanceof ReproduceAction) {
-            actionMetrics.offspringCounts.push(chosen.cloneIds.length);
-        } else if (chosen instanceof WaitAction) {
-            actionMetrics.wait++;
-        }
-    }
-
     private starveIndividuals() {
         let starvedIndividuals = 0;
 
         for (let individual of this.state.individuals) {
-            if (individual.energy <= 0 && !individual.deathDay && individual.getAge(this.state.day) > 0) {
+            if (individual.energy <= 0 && individual.deathDay == null && individual.getAge(this.state.day) > 0) {
                 individual.dieStarved(this.state.day);
                 starvedIndividuals++;
             }

@@ -1,5 +1,6 @@
-import { Individual } from "../../simulation/individual.js";
+import { Individual } from "@simulation/individual.js";
 
+// currently not used
 export class IndividualsDetails {
     readonly individuals: Individual[];
     readonly day: number;
@@ -51,8 +52,9 @@ export class IndividualsDetails {
         const values = {
             "ID": individual.id,
             "Age": individual.getAge(this.day).toString(),
-            [`Brain\n🍽️👶`]: individual.brain.eatOrReproduce.toString(),
-            [`Diet\n🥕🥩`]: individual.brain.plantOrMeat.toString(),
+            [`Survive or Learn`]: individual.brain.surviveOrLearn.toString(),
+            [`Eat or Reproduce`]: individual.brain.eatOrReproduce.toString(),
+            [`Plant or Meat`]: individual.brain.plantOrMeat.toString(),
             "Action": individual.events[individual.events.length - 1] || "",
             "Energy": this.energyLabel(individual.energy),
             "Ancestors": this.ancestorLabel(individual),
@@ -92,7 +94,7 @@ export class IndividualsDetails {
 
         let parentString = parents.map(parent => parent.id).join(" > ");
         const oldestParent = parents[0];
-        if (oldestParent.deathDay) {
+        if (oldestParent.deathDay != null) {
             parentString = parentString.replace(oldestParent.id, `${oldestParent.id} † ${oldestParent.deathDay}`);
         }
 
@@ -102,8 +104,8 @@ export class IndividualsDetails {
     private sortIndividualsWithinCategory(individuals: Individual[]): Individual[] {
         return individuals.sort((a: Individual, b: Individual) => {
             // show (longest) dead individuals at bottom
-            if (a.deathDay && b.deathDay && a.deathDay != b.deathDay) {
-                return b.deathDay! - a.deathDay!;
+            if (a.deathDay != null && b.deathDay != null && a.deathDay != b.deathDay) {
+                return b.deathDay - a.deathDay;
             }
 
             // living offspring descending

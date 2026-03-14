@@ -1,23 +1,26 @@
-import { Chromosome } from "./chromosome.js";
+import { Chromosome } from "@simulation/genetics/chromosome.js";
+import { Gene } from "@simulation/genetics/gene.js";
 
 export enum TraitGenes {
-    Strength = "strength",
-    Speed = "speed",
-    Agility = "agility"
+    Alertness = "Alertness",
+    Size = "Size",
 }
 
-// currently not used
 export class Traits extends Chromosome {
     static readonly geneKeys = Object.values(TraitGenes);
 
-    canEscape(predator: Traits): boolean {
-        for (const trait of Traits.geneKeys) {
-            const preyValue = this.genes[trait];
-            const predatorValue = predator.genes[trait];
-            if (preyValue > predatorValue) {
-                return true;
-            }
-        }
-        return false;
+    static neutral(): Traits {
+        const genes: { [key: string]: Gene } = {};
+        genes[TraitGenes.Alertness] = new Gene(1 / 9);
+        genes[TraitGenes.Size] = new Gene(1 / 9);
+        return new Traits(genes);
+    }
+
+    get alertness(): Gene {
+        return this.genes[TraitGenes.Alertness];
+    }
+
+    get size(): Gene {
+        return this.genes[TraitGenes.Size];
     }
 }

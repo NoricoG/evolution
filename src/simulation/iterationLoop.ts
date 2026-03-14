@@ -1,4 +1,4 @@
-import { Iterations } from "./iterations.js";
+import { Iterations } from "@simulation/iterations.js";
 
 export class IterationLoop {
     readonly iterations: Iterations;
@@ -27,8 +27,8 @@ export class IterationLoop {
     }
 
     private startInterval(fast: boolean) {
-        const wait = fast ? 100 : 200;
-        const iterationsAmount = fast ? 5 : 1;
+        const wait = fast ? 150 : 150;
+        const iterationsAmount = fast ? 50 : 5;
         this.playInterval = setInterval(() => {
             const continueLoop = this.iterations.execute(iterationsAmount);
             this.onUpdate();

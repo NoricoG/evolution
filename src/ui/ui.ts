@@ -1,9 +1,7 @@
-import { IndividualsDetails } from "./individualsDetails.js";
-
-import { State } from "../../simulation/state.js";
-import { Charts } from "../charts/charts.js";
-import { Iterations } from "../iterations.js";
-import { IterationLoop } from "../iterationLoop.js";
+import { IterationLoop } from "@simulation/iterationLoop.js";
+import { Iterations } from "@simulation/iterations.js";
+import { State } from "@simulation/state.js";
+import { ChartSections } from "@ui/chartSections.js";
 
 window.onload = () => new UI();
 
@@ -11,7 +9,7 @@ class UI {
     private readonly state: State;
     private readonly iterations: Iterations;
     private readonly loop: IterationLoop;
-    private readonly charts: Charts;
+    private readonly charts: ChartSections;
 
     private playMode: 'slow' | 'fast' | null = null;
 
@@ -21,7 +19,7 @@ class UI {
         this.loop = new IterationLoop(this.iterations);
         this.loop.onUpdate = () => this.updateUI();
 
-        this.charts = new Charts();
+        this.charts = new ChartSections();
 
         this.updateUI();
         this.addButtonListeners();
@@ -31,6 +29,7 @@ class UI {
         document.getElementById("next-1-btn")!.addEventListener("click", () => this.nextIteration(1));
         document.getElementById("next-10-btn")!.addEventListener("click", () => this.nextIteration(10));
         document.getElementById("next-100-btn")!.addEventListener("click", () => this.nextIteration(100));
+        document.getElementById("next-500-btn")!.addEventListener("click", () => this.nextIteration(500));
         document.getElementById("play-slow-btn")!.addEventListener("click", () => this.togglePlaySlow());
         document.getElementById("play-fast-btn")!.addEventListener("click", () => this.togglePlayFast());
     }
@@ -71,14 +70,7 @@ class UI {
     }
 
     private updateUI() {
-        this.updateTitles();
-        new IndividualsDetails(this.state.individuals, this.state.day).showIndividuals();
-
-        this.charts.update(this.state.metrics.dayMetrics);
-    }
-
-    private updateTitles() {
         document.getElementById("iteration-title")!.innerText = `Iteration ${this.state.day}`;
-        document.getElementById("individuals-title")!.innerText = `Individuals (${this.state.individuals.length})`;
+        this.charts.update(this.state.metrics.flush());
     }
 }
