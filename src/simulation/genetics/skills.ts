@@ -3,7 +3,7 @@ import { Gene } from "@simulation/genetics/gene.js";
 import { GeneConstants } from "@simulation/constants.js";
 
 export enum SkillsGenes {
-    FindPlant = "FindPlant",
+    PlantSearch = "PlantSearch",
     Hunt = "Hunt",
 }
 
@@ -12,7 +12,7 @@ export class Skills extends Chromosome {
 
     static neutral(): Skills {
         const genes: { [key: string]: Gene } = {};
-        genes[SkillsGenes.FindPlant] = new Gene(2 / 9);
+        genes[SkillsGenes.PlantSearch] = new Gene(2 / 9);
         genes[SkillsGenes.Hunt] = new Gene(1 / 9);
         return new Skills(genes);
     }
@@ -27,8 +27,8 @@ export class Skills extends Chromosome {
         this.genes[randomKey] = new Gene(newValue);
     }
 
-    get findPlant(): Gene {
-        return this.genes[SkillsGenes.FindPlant];
+    get plantSearch(): Gene {
+        return this.genes[SkillsGenes.PlantSearch];
     }
 
     get hunt(): Gene {

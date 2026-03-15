@@ -1,4 +1,3 @@
-import { Action } from "@simulation/actions/activity.js";
 import { Environment } from "@simulation/environment.js";
 import { Individual } from "@simulation/individual.js";
 import { SimulationMetrics } from "@simulation/metrics.js";
@@ -68,7 +67,9 @@ export class State {
         this.individuals = Array.from(this.individualsById.values());
     }
 
-    logAction(action: Action, succesful: boolean) {
-        this.metrics.logAction(action, succesful);
-    }
+    logGrowUp() { this.metrics.logGrowUp(); }
+    logLearn() { this.metrics.logLearn(); }
+    logPlantSearch(succesful: boolean) { this.metrics.logPlantSearch(succesful); }
+    logHunt(succesful: boolean) { this.metrics.logHunt(succesful); }
+    logReproduce(count: number) { this.metrics.logReproduce(count); }
 }

@@ -27,7 +27,7 @@ export class Chromosome {
         for (const key of Object.keys(chromosomeA.genes)) {
             const geneA = chromosomeA.genes[key];
             const geneB = chromosomeB.genes[key];
-            totalSteps += Gene.difference(geneA, geneB);
+            totalSteps += Gene.bucketDifference(geneA, geneB);
         }
         return totalSteps <= maxTotalSteps;
     }

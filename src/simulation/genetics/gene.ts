@@ -46,13 +46,10 @@ export class Gene {
         return new Gene(shifted);
     }
 
-    static difference(geneA: Gene, geneB: Gene): number {
-        const a = geneA.toString();
-        const b = geneB.toString();
+    static bucketDifference(geneA: Gene, geneB: Gene): number {
+        const a = geneA.bucket;
+        const b = geneB.bucket;
 
-        const numA = parseInt(a);
-        const numB = parseInt(b);
-
-        return Math.abs(numA - numB);
+        return Math.abs(a - b);
     }
 }

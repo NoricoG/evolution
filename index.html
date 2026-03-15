@@ -11,14 +11,25 @@
 <body>
     <h2 id="iteration-title"></h2>
     <div>
-        <button class="big-button" id="next-1-btn">Jump 1 iteration</button>
-        <button class="big-button" id="next-10-btn">Jump 10 iterations</button>
-        <button class="big-button" id="next-100-btn">Jump 100 iterations</button>
-        <button class="big-button" id="next-500-btn">Jump 500 iterations</button>
+        <button class="big-button" id="jump-1-btn">Jump 1 time</button>
+        <button class="big-button" id="jump-1s-btn">Jump 1 second</button>
+        <button class="big-button" id="jump-10s-btn">Jump 10 seconds</button>
+    </div>
+    <div class="slider-group">
+        <div class="slider-row">
+            <label for="iterations-per-jump">Iterations/jump:</label>
+            <input type="range" id="iterations-per-jump">
+            <span id="iterations-per-jump-value"></span>
+        </div>
+        <div class="slider-row">
+            <label for="jumps-per-sec">Jumps/sec:</label>
+            <input type="range" id="jumps-per-sec">
+            <span id="jumps-per-sec-value"></span>
+        </div>
     </div>
     <div>
-        <button class="big-button" id="play-slow-btn">▶ Play Slow</button>
-        <button class="big-button" id="play-fast-btn">▶ Play Fast</button>
+        <button class="big-button" id="play-btn">▶ Play</button>
     </div>
+
     <div id="charts"></div>
 </body>

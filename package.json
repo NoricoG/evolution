@@ -9,9 +9,5 @@
     "devDependencies": {
         "esbuild": "^0.25.0",
         "vitest": "^4.0.18"
-    },
-    "dependencies": {
-        "chart.js": "^4.5.1",
-        "chartjs-chart-matrix": "^3.0.0"
     }
 }

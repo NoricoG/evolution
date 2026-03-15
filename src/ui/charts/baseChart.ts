@@ -1,35 +1,14 @@
-import { Chart, Legend, LinearScale, Title, Tooltip } from "chart.js";
-
 import { DayMetrics } from "@simulation/metrics.js";
 
-Chart.register(LinearScale, Tooltip, Legend, Title);
-
-export function getTickStepSize(numDays: number): number {
-    if (numDays <= 50) return 5;
-    if (numDays <= 100) return 10;
-    if (numDays <= 300) return 25;
-    if (numDays <= 600) return 50;
-    return 100;
-}
-
-export const baseChartOptions = {
-    responsive: true,
-    maintainAspectRatio: false,
-    animation: false,
-    events: ['click'] as any,
-    transitions: {
-        default: { animation: { duration: 0 } },  // data updates (e.g. x-axis extension)
-    },
-} as const;
-
 export abstract class BaseChart {
-    protected chart: Chart | undefined;
     protected static readonly MAX_DAYS = 550;
     protected static readonly TARGET_DAYS = 500;
 
+    yAxisLimit = -1;
+
     constructor(readonly canvasId: string) { }
 
-    protected getPruneExcess(currentDays: number): number {
+    protected getExcessDays(currentDays: number): number {
         if (currentDays >= BaseChart.MAX_DAYS) {
             // prune one less so we start at 0
             return currentDays - BaseChart.TARGET_DAYS - 1;
@@ -48,15 +27,28 @@ export abstract class BaseChart {
         return { min, max: Math.max(min + 50, max) };
     }
 
-    protected getCanvas(): HTMLCanvasElement | null {
-        return document.getElementById(this.canvasId) as HTMLCanvasElement;
+    protected updateYAxisLimit(dataLimit: number) {
+        const roundedLimit = this.roundUpYLimit(dataLimit);
+
+        const dataExceedsGraph = roundedLimit > this.yAxisLimit;
+        const graphExceedsData = dataLimit < this.yAxisLimit * 0.4;
+
+        if (dataExceedsGraph || graphExceedsData) {
+            this.yAxisLimit = roundedLimit;
+        }
     }
 
-    protected initializeChart(config: any): boolean {
-        const canvas = this.getCanvas();
-        if (!canvas) return false;
-        this.chart = new Chart(canvas, config);
-        return true;
+    protected roundUpYLimit(value: number): number {
+        if (value <= 25) {
+            return 25;
+        }
+
+        const roundTo = value > 1000 ? 250 : (value > 500 ? 100 : 50);
+        return Math.ceil(value / roundTo) * roundTo;
+    }
+
+    protected getCanvas(): HTMLCanvasElement | null {
+        return document.getElementById(this.canvasId) as HTMLCanvasElement;
     }
 
     abstract update(dayMetrics: DayMetrics[]): void;

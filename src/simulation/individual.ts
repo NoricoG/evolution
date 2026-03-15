@@ -17,8 +17,6 @@ export class Individual {
     readonly traits: Traits;
     readonly skills: Skills;
 
-    events: string[] = [];
-
     energy: number;
 
     children: Individual[] = [];
@@ -122,9 +120,8 @@ export class Individual {
         return this.energy <= EnergyConstants.max - 1;
     }
 
-    dieEaten(today: number, eaterId: string) {
+    dieEaten(today: number) {
         this.eaten = true;
-        this.events.push(`${eaterId} 🥩`);
         this.die(today);
     }
 

@@ -1,5 +1,5 @@
 import { EnergyConstants } from "@simulation/constants.js";
-import { MainDecision } from "@simulation/actions/decision.js";
+import { MainDecision } from "@simulation/activities/decision.js";
 import { ActionMetrics } from "@simulation/metrics.js";
 import { State } from "@simulation/state.js";
 
@@ -31,13 +31,11 @@ export class Iterations {
 
             const allDead = this.state.individuals.filter(individual => individual.deathDay == null).length == 0;
             if (allDead) {
-                const anyDiedToday = this.state.individuals.filter(individual => individual.deathDay == this.state.day).length > 0;
-                if (anyDiedToday) {
-                    alert("All individuals have died. Reload the page for a new simulation.");
-                }
+                // don't continue loop
                 return false;
             }
         }
+        // continue loop
         return true;
     }
 
@@ -52,9 +50,8 @@ export class Iterations {
         }
 
         for (const individual of individuals) {
-            const mainDecision = new MainDecision(individual);
-            if (mainDecision.isPossible(this.state)) {
-                const gainedEnergy = mainDecision.execute(this.state);
+            if (MainDecision.isPossible(individual, this.state)) {
+                const gainedEnergy = MainDecision.execute(individual, this.state);
 
                 individual.energy += gainedEnergy;
                 if (individual.energy > EnergyConstants.max) {
