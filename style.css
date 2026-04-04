@@ -32,6 +32,13 @@ h3 {
     margin-bottom: 0;
 }
 
+#maps {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 16px;
+}
+
 #charts {
     display: flex;
     flex-direction: column;

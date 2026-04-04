@@ -93,7 +93,7 @@ class Environment {
         this.freshBodies = [];
         this.allBodies = [...this.oldBodies, ...this.freshBodies];
     }
-    removeBody(bodyId) {
+    removeOrgans(bodyId) {
         this.freshBodies = this.freshBodies.filter(id => id !== bodyId);
         this.oldBodies = this.oldBodies.filter(id => id !== bodyId);
         this.allBodies = this.allBodies.filter(id => id !== bodyId);

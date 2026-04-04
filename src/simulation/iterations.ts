@@ -1,5 +1,5 @@
 import { EnergyConstants } from "@simulation/constants.js";
-import { MainDecision } from "@simulation/activities/decision.js";
+import { BrainDecision } from "@simulation/action/decision.js";
 import { ActionMetrics } from "@simulation/metrics.js";
 import { State } from "@simulation/state.js";
 
@@ -20,11 +20,7 @@ export class Iterations {
 
             this.state.updateEnvironment();
 
-            for (const individual of this.state.individuals) {
-                individual.extraAlertness = 0;
-            }
-
-            const actionMetrics = this.actAllIndividuals();
+            this.actAllIndividuals(this.state.metrics.latestDayMetrics.actions);
             this.starveIndividuals();
 
             this.state.metrics.calculateRemainingMetrics(this.state);
@@ -39,9 +35,7 @@ export class Iterations {
         return true;
     }
 
-    private actAllIndividuals(): ActionMetrics {
-        const actionMetrics = new ActionMetrics();
-
+    private actAllIndividuals(actionMetrics: ActionMetrics) {
         // shuffle individuals
         const individuals = this.state.individuals;
         for (let i = individuals.length - 1; i > 0; i--) {
@@ -50,8 +44,8 @@ export class Iterations {
         }
 
         for (const individual of individuals) {
-            if (MainDecision.isPossible(individual, this.state)) {
-                const gainedEnergy = MainDecision.execute(individual, this.state);
+            if (BrainDecision.isPossible(individual, this.state)) {
+                const gainedEnergy = BrainDecision.execute(individual, this.state, this.state.metrics.latestDayMetrics.actions);
 
                 individual.energy += gainedEnergy;
                 if (individual.energy > EnergyConstants.max) {
@@ -59,16 +53,18 @@ export class Iterations {
                 }
             }
         }
-
-        return actionMetrics;
     }
 
     private starveIndividuals() {
         let starvedIndividuals = 0;
 
         for (let individual of this.state.individuals) {
-            if (individual.energy <= 0 && individual.deathDay == null && individual.getAge(this.state.day) > 0) {
+            const lowEnergy = individual.energy <= 0;
+            const alive = individual.deathDay == null;
+            const notBornToday = individual.getAge(this.state.day) > 0;
+            if (lowEnergy && alive && notBornToday) {
                 individual.dieStarved(this.state.day);
+                this.state.space.removeAnimal(individual);
                 starvedIndividuals++;
             }
         }

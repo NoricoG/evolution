@@ -1,5 +1,6 @@
-import { Environment } from "@simulation/environment.js";
+import { Chromosome } from "@simulation/genetics/chromosome.js";
 import { Individual } from "@simulation/individual.js";
+import { Space } from "@simulation/space.js";
 import { State } from "@simulation/state.js";
 
 export class SimulationMetrics {
@@ -17,12 +18,6 @@ export class SimulationMetrics {
         return flushed;
     }
 
-    logGrowUp() { this.latestDayMetrics.logGrowUp(); }
-    logLearn() { this.latestDayMetrics.logLearn(); }
-    logPlantSearch(succesful: boolean) { this.latestDayMetrics.logPlantSearch(succesful); }
-    logHunt(succesful: boolean) { this.latestDayMetrics.logHunt(succesful); }
-    logReproduce(count: number) { this.latestDayMetrics.logReproduce(count); }
-
     calculateRemainingMetrics(state: State) {
         this.latestDayMetrics.calculateRemainingMetrics(state);
     }
@@ -38,12 +33,6 @@ export class DayMetrics {
     eatenDietDistribution: DietDistributionMetrics = new DietDistributionMetrics();
     readonly actions: ActionMetrics = new ActionMetrics();
 
-    logGrowUp() { this.actions.logGrowUp(); }
-    logLearn() { this.actions.logLearn(); }
-    logPlantSearch(succesful: boolean) { this.actions.logPlantSearch(succesful); }
-    logHunt(succesful: boolean) { this.actions.logHunt(succesful); }
-    logReproduce(count: number) { this.actions.logReproduce(count); }
-
     calculateRemainingMetrics(state: State) {
         const living = state.individuals.filter(i => i.deathDay == null);
         const dead = state.individuals.filter(i => i.deathDay != null);
@@ -52,7 +41,7 @@ export class DayMetrics {
 
         this.day = state.day;
         this.population.calculate(state.day, state.individuals, living, dead, eaten, starved);
-        this.food.calculate(state.environment);
+        this.food.calculate(state.space);
         this.genetics.calculate(state);
         this.dietDistribution.calculate(living);
         this.starvedDietDistribution.calculate(starved);
@@ -77,27 +66,33 @@ export class PopulationMetrics {
 }
 
 export class FoodMetrics {
-    uneaten: number = 0;
-    grown: number = 0;
-    remaining: number = 0;
+    plantDensity: number = 0;
 
-    calculate(environment: Environment) {
-        this.uneaten = environment.uneatenFood;
-        this.grown = environment.grownFood;
-        this.remaining = environment.remainingFood;
+    calculate(space: Space) {
+        // calculate average plant value across all tiles
+        let totalPlants = 0;
+        let count = 0;
+
+        for (let x = 0; x < space.width; x++) {
+            for (let y = 0; y < space.height; y++) {
+                totalPlants += space.plants[x][y];
+                count++;
+            }
+        }
+
+        this.plantDensity = count > 0 ? totalPlants / count : 0;
     }
 }
 
 export class GeneticsMetrics {
-    surviveOrLearn: GeneMetrics = new GeneMetrics();
-    eatOrReproduce: GeneMetrics = new GeneMetrics();
-    plantOrMeat: GeneMetrics = new GeneMetrics();
 
-    plantSearchSkill: GeneMetrics = new GeneMetrics();
-    huntSkill: GeneMetrics = new GeneMetrics();
+    chromosomes: ChromosomeMetrics[] = [];
 
-    alertnessTrait: GeneMetrics = new GeneMetrics();
-    sizeTrait: GeneMetrics = new GeneMetrics();
+    constructor() {
+        for (const chromosome of Individual.allChromosomes) {
+            this.chromosomes.push(new ChromosomeMetrics(chromosome.toString(), chromosome.geneKeys));
+        }
+    }
 
     calculate(state: State) {
         for (const individual of state.individuals) {
@@ -105,23 +100,41 @@ export class GeneticsMetrics {
                 continue;
             }
 
-            this.surviveOrLearn.counts[individual.brain.surviveOrLearn.bucket - 1]++;
-            this.eatOrReproduce.counts[individual.brain.eatOrReproduce.bucket - 1]++;
-            this.plantOrMeat.counts[individual.brain.plantOrMeat.bucket - 1]++;
+            const chromosomes = [individual.brain, individual.diet, individual.traits, individual.skills];
+            for (let i = 0; i < chromosomes.length; i++) {
+                this.chromosomes[i].calculate(chromosomes[i]);
+            }
+        }
+    }
+}
 
-            this.plantSearchSkill.counts[individual.skills.plantSearch.bucket - 1]++;
-            this.huntSkill.counts[individual.skills.hunt.bucket - 1]++;
+export class ChromosomeMetrics {
+    genes: GeneMetrics[] = [];
+    name: string = "";
 
-            this.alertnessTrait.counts[individual.traits.alertness.bucket - 1]++;
-            this.sizeTrait.counts[individual.traits.size.bucket - 1]++;
+    constructor(name: string, geneNames: string[]) {
+        this.name = name;
+
+        for (const geneName of geneNames) {
+            this.genes.push(new GeneMetrics(geneName));
+        }
+    }
+
+    calculate(chromosome: Chromosome) {
+        const geneKeys = Object.keys(chromosome.genes);
+        for (let i = 0; i < geneKeys.length; i++) {
+            const gene = chromosome.genes[geneKeys[i]];
+            this.genes[i].counts[gene.bucket - 1]++;
         }
     }
 }
 
 export class GeneMetrics {
+    name: string = "";
     counts: number[];
 
-    constructor() {
+    constructor(name: string) {
+        this.name = name;
         this.counts = [];
         for (let i = 1; i <= 9; i++) {
             this.counts.push(0);
@@ -141,20 +154,17 @@ export class DietDistributionMetrics {
 
     calculate(living: Individual[]) {
         for (const individual of living) {
-            const bucket = individual.brain.plantOrMeat.bucket;
+            const bucket = individual.diet.meat.bucket;
             this.bucketCounts[bucket - 1]++;
         }
     }
 }
 
 export class ActionMetrics {
+    idle = 0;
     growUp = 0;
 
-    learn = 0;
-    survive = 0;
-
-    reproduce = 0;
-    offspringCounts: number[] = [];
+    move = 0;
 
     eat = 0;
     plantSearch = 0;
@@ -165,16 +175,22 @@ export class ActionMetrics {
     huntSuccess = 0;
     huntFail = 0;
 
+    reproduce = 0;
+    offspringCounts: number[] = [];
+
     logGrowUp() {
         this.growUp++;
     }
 
-    logLearn() {
-        this.learn++;
+    logIdle() {
+        this.idle++;
+    }
+
+    logMove() {
+        this.move++;
     }
 
     logPlantSearch(succesful: boolean) {
-        this.survive++;
         this.eat++;
         this.plantSearch++;
         if (succesful) {
@@ -185,7 +201,6 @@ export class ActionMetrics {
     }
 
     logHunt(succesful: boolean) {
-        this.survive++;
         this.eat++;
         this.hunt++;
         if (succesful) {
@@ -196,7 +211,6 @@ export class ActionMetrics {
     }
 
     logReproduce(count: number) {
-        this.survive++;
         this.reproduce++;
         this.offspringCounts.push(count);
     }

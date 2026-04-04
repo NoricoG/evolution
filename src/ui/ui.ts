@@ -2,6 +2,7 @@ import { IterationLoop } from "@simulation/iterationLoop.js";
 import { Iterations } from "@simulation/iterations.js";
 import { State } from "@simulation/state.js";
 import { ChartSections } from "@ui/chartSections.js";
+import { MapSections } from "@ui/mapSections.js";
 
 window.onload = () => new UI();
 
@@ -10,6 +11,7 @@ export class UI {
     private readonly iterations: Iterations;
     private readonly loop: IterationLoop;
     private readonly charts: ChartSections;
+    private readonly maps: MapSections;
 
     constructor() {
         this.state = new State();
@@ -18,6 +20,7 @@ export class UI {
         this.loop.onUpdate = () => this.updateUI();
 
         this.charts = new ChartSections();
+        this.maps = new MapSections();
 
 
         this.initSliders();
@@ -32,9 +35,8 @@ export class UI {
 
     private initJumpsPerSecSlider() {
         const min = 5;
-        const max = 30;
+        const max = 40;
         const step = 5;
-        const defaultValue = 20;
 
         const slider = document.getElementById("jumps-per-sec") as HTMLInputElement;
         slider.min = String(min);
@@ -51,8 +53,8 @@ export class UI {
     }
 
     private initIterationsPerJumpSlider() {
-        const options = [5, 10, 25, 50, 100, 200, 300];
-        const defaultIndex = 2; // 25
+        const options = [1, 2, 5, 10, 25, 50];
+        const defaultIndex = options.indexOf(this.loop.iterationsPerJump);
 
         const min = 0;
         const max = options.length - 1;
@@ -87,7 +89,6 @@ export class UI {
 
     private jump(iterations: number) {
         const continueLoop = this.iterations.execute(iterations);
-        console.log(`Jumped ${iterations} iterations. All dead: ${!continueLoop}`);
         if (!continueLoop) {
             this.handleSimulationEnd();
         }
@@ -115,6 +116,7 @@ export class UI {
         document.getElementById("iteration-title")!.innerText = `Iteration ${this.state.day}`;
         (document.getElementById("play-btn") as HTMLButtonElement).textContent =
             this.loop.isPlaying ? "⏸ Pause" : "▶ Play";
+        this.maps.update(this.state.space);
         this.charts.update(this.state.metrics.flush());
     }
 }

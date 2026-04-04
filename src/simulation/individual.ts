@@ -1,19 +1,24 @@
-import { Color } from "@ui/color.js";
+import { Hue } from "@ui/color.js";
 import { EnergyConstants } from "@simulation/constants.js";
+import { XY } from "@simulation/space.js";
 import { Brain } from "@simulation/genetics/brain.js";
+import { Diet } from "@simulation/genetics/diet.js";
 import { Skills } from "@simulation/genetics/skills.js";
 import { Traits } from "@simulation/genetics/traits.js";
 
 export class Individual {
-    id: string = "";  // assigned by state
+    // TODO: move to separate genome class
+    static allChromosomes = [Brain, Diet, Traits, Skills];
+
+    id: number = -1;  // assigned by state
     readonly birthday: number;
     parent: Individual | null;
     deathDay: number | null = null;
     eaten: boolean = false;
     starved: boolean = false;
-    extraAlertness: number = 0;
 
     readonly brain: Brain;
+    readonly diet: Diet;
     readonly traits: Traits;
     readonly skills: Skills;
 
@@ -21,12 +26,15 @@ export class Individual {
 
     children: Individual[] = [];
 
-    constructor(birthday: number, parent: Individual | null, brain: Brain, traits: Traits, skills: Skills) {
-        this.birthday = birthday;
+    location: XY;
 
+    constructor(location: XY, birthday: number, parent: Individual | null, brain: Brain, diet: Diet, traits: Traits, skills: Skills) {
+        this.location = location;
+        this.birthday = birthday;
         this.parent = parent;
 
         this.brain = brain;
+        this.diet = diet;
         this.traits = traits;
         this.skills = skills;
 
@@ -38,7 +46,7 @@ export class Individual {
     }
 
     toColor(): string {
-        return Color.genomeToColor(this.brain);
+        return Hue.genomeToColor(this.diet);
     }
 
     getAge(today: number): number {
@@ -48,16 +56,17 @@ export class Individual {
         return today - this.birthday;
     }
 
-    static neutral(birthday: number): Individual {
-        return new Individual(birthday, null, Brain.neutral(), Traits.neutral(), Skills.neutral());
+    static neutral(location: XY, birthday: number): Individual {
+        return new Individual(location, birthday, null, Brain.neutral(), Diet.neutral(), Traits.neutral(), Skills.neutral());
     }
 
-    createChild(today: number): Individual {
+    createChild(location: XY, today: number): Individual {
         const evolvedBrain = this.brain.mutatedCopy(true);
+        const evolvedDiet = this.diet.mutatedCopy(true);
         const evolvedTraits = this.traits.mutatedCopy(false);
         const evolvedSkills = this.skills.mutatedCopy(false);
 
-        const baby = new Individual(today, this, evolvedBrain, evolvedTraits, evolvedSkills);
+        const baby = new Individual(location, today, this, evolvedBrain, evolvedDiet, evolvedTraits, evolvedSkills);
         this.children.push(baby);
 
         return baby;
@@ -79,11 +88,11 @@ export class Individual {
         // remove last generation which is empty
         offspring.pop();
 
-        const offSpringCounts = offspring.map(generation => generation.filter(individual => includeDead || individual.deathDay == null).length);
-        if (offSpringCounts[offSpringCounts.length - 1] == 0) {
-            offSpringCounts.pop();
+        const offspringCounts = offspring.map(generation => generation.filter(individual => includeDead || individual.deathDay == null).length);
+        if (offspringCounts[offspringCounts.length - 1] == 0) {
+            offspringCounts.pop();
         }
-        return offSpringCounts;
+        return offspringCounts;
     }
 
     getOffspringSum(includeDead: boolean = false): number {
@@ -132,23 +141,12 @@ export class Individual {
 
     private die(today: number) {
         this.deathDay = today;
-    }
 
-    // to clean up references to dead individuals
-    pruneDeadParents(deadGenerations: number = 0) {
-        let parent = this.parent;
-
-        if (parent == null) {
-            return;
-        } else if (parent.deathDay == null) {
-            parent.pruneDeadParents(0);
-        } else if (deadGenerations >= 2) {
-            // parent is long dead
-            this.parent = null;
-            // children are also dead
-            this.children = [];
-        } else {
-            parent.pruneDeadParents(deadGenerations + 1);
+        if (this.parent) {
+            this.parent.children = this.parent.children.filter(c => c.id !== this.id);
+        }
+        for (let child of this.children) {
+            child.parent = null;
         }
     }
 }

@@ -11,7 +11,7 @@ import {
     plotArea,
     resizeCanvas,
 } from "@ui/charts/chartLayout.js";
-import { Color } from "@ui/color.js";
+import { Hue } from "@ui/color.js";
 
 type MatrixDataPoint = { x: number; y: number; color: string };
 type MatrixColumn = { x: number; cells: { y: number; color: string }[] };
@@ -128,8 +128,8 @@ export class MatrixChart extends BaseChart {
         if (value === 0) {
             return "";
         }
-        const lightness = 1 - value * 0.5;
-        const [r, g, b] = Color.hslToRgb(this.hue, Color.defaultSaturation, lightness);
+        const lightness = 1 - value * 1;
+        const [r, g, b] = Hue.hslToRgb(this.hue, Hue.defaultSaturation, lightness);
         return `rgb(${r}, ${g}, ${b})`;
     }
 }

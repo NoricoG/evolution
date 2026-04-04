@@ -1,4 +1,4 @@
-import { Chromosome } from "@simulation/genetics/chromosome.js";
+import { RelativeChromosome } from "@simulation/genetics/chromosome.js";
 import { Gene } from "@simulation/genetics/gene.js";
 import { GeneConstants } from "@simulation/constants.js";
 
@@ -7,13 +7,14 @@ export enum SkillsGenes {
     Hunt = "Hunt",
 }
 
-export class Skills extends Chromosome {
+export class Skills extends RelativeChromosome {
+    static readonly chromosomeName = "Skills";
     static readonly geneKeys = Object.values(SkillsGenes);
 
     static neutral(): Skills {
         const genes: { [key: string]: Gene } = {};
-        genes[SkillsGenes.PlantSearch] = new Gene(2 / 9);
-        genes[SkillsGenes.Hunt] = new Gene(1 / 9);
+        genes[SkillsGenes.PlantSearch] = new Gene(1 / 2);
+        genes[SkillsGenes.Hunt] = new Gene(1 / 2);
         return new Skills(genes);
     }
 

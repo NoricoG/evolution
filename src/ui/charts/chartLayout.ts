@@ -1,13 +1,13 @@
 export const MARGIN = {
     top: 32,
-    right: 32,
+    right: 48,
     bottom: 48,
     left: 8,
 } as const;
 
-export const VISIBLE_DAYS = 500;
+export const VISIBLE_DAYS = 300;
 
-export const MATRIX_CANVAS_HEIGHT = 200;
+export const MATRIX_CANVAS_HEIGHT = 150;
 export const STACKED_BAR_CANVAS_HEIGHT = 300;
 
 export const CANVAS_WIDTH = MARGIN.left + VISIBLE_DAYS + MARGIN.right;
@@ -166,7 +166,7 @@ export function drawTitle(ctx: CanvasRenderingContext2D, canvasWidth: number, te
     applyTextStyle(ctx);
     ctx.font = TITLE_FONT;
     ctx.textAlign = "center";
-    ctx.fillText(text, canvasWidth / 2, 14);
+    ctx.fillText(text, canvasWidth * 0.4, 14);
 }
 
 export function clearPlotArea(ctx: CanvasRenderingContext2D, area: PlotArea) {

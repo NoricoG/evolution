@@ -4,8 +4,9 @@
   var IterationLoop = class {
     iterations;
     ui;
-    jumpsPerSecond = 20;
-    iterationsPerJump = 30;
+    // defaults
+    jumpsPerSecond = 30;
+    iterationsPerJump = 2;
     playInterval = void 0;
     onUpdate = () => {
     };
@@ -42,99 +43,108 @@
 
   // src/simulation/constants.ts
   var Constants = class {
-    static plantSearchAttempts = 5 + Math.round(Math.random() * 5);
-    static huntAttempts = 1 + Math.round(Math.random() * 2);
     static reproductiveAge = 2;
     static maxChildrenPerReproduction = 2;
+    static huntingDistance = 5;
   };
   var EnvironmentConstants = class {
-    static preserveRemainingFood = 0.1 + Math.random() * 0.2;
-    static minFoodRegeneration = 15 + Math.round(Math.random() * 15);
-    static maxFoodRegeneration = 30 + Math.round(Math.random() * 30);
-    static stepFoodRegeneration = 1e-3 + Math.random() * 0.1;
+    static plantGrowthPerTile = 0.02;
+    static initialPlantAmount = 1;
   };
   var GeneConstants = class {
-    static shiftRange = 0.01 + Math.random() * 0.04;
-    static geneInvertChance = 1e-3 + Math.random() * 0.06;
-    static learnImprovement = 0.01;
+    static shiftRange = 0.05 + Math.random() * 0.05;
+    static geneInvertChance = 0.01 + Math.random() * 0.01;
+    static learnImprovement = 5e-3;
   };
   var EnergyConstants = class {
-    static whenBorn = 3;
-    static max = 7;
+    static whenBorn = 6;
+    static max = 10;
     // cost per turn, added to any action
     static anyAction = -1;
-    // gain when eating
-    static plantSearchAction = 3;
-    static huntAction = 3;
-    // no extra cost for learning
-    static learnAction = 0;
+    static energyPerPlant = 10;
+    static maxEatPlantEnergy = 5;
+    static maxHuntEnergy = 15;
+    static moveAction = -1;
     // buffer needed to reproduce, not spent but must be exceeded
-    static bufferForReproduction = 4;
+    static bufferForReproduction = 7;
     // energy spent per child when reproducing
     static reproductionPerChild = -1;
   };
 
-  // src/simulation/activities/activity.ts
-  var Activity = class {
+  // src/simulation/action/action.ts
+  var Action = class {
+    static weight(_individual) {
+      throw new Error("Not implemented");
+    }
     static isPossible(_individual, _state) {
       throw new Error("Not implemented");
     }
-    static execute(_individual, _state) {
+    static execute(_individual, _state, _metrics) {
       throw new Error("Not implemented");
     }
-  };
-
-  // src/simulation/activities/action.ts
-  var Action = class extends Activity {
   };
   var IdleAction = class extends Action {
+    static weight(_individual) {
+      return 0;
+    }
     static isPossible(_individual, _state) {
       return true;
     }
-    static execute(_individual, state) {
-      console.warn("Individual idled, this should not happen");
-      return EnergyConstants.anyAction;
-    }
-  };
-  var GrowUpAction = class extends Action {
-    static isPossible(_individual, _state) {
-      return true;
-    }
-    static execute(_individual, state) {
-      state.logGrowUp();
+    static execute(individual, state, metrics) {
+      if (individual.getAge(state.day) >= 2) {
+        metrics.logIdle();
+        console.warn("Adult individual idled, this should not happen");
+      } else {
+        metrics.logGrowUp();
+      }
       return EnergyConstants.anyAction;
     }
   };
   var PlantSearchAction = class extends Action {
-    static isPossible(_individual, _state) {
-      return true;
+    static weight(individual) {
+      return individual.diet.plant.value;
     }
-    static execute(individual, state) {
-      if (state.environment.remainingFood > 0) {
-        const plantSearchSkill = individual.skills.plantSearch.value;
-        let attempts = Math.round(Constants.plantSearchAttempts * (1 - individual.traits.alertness.value));
-        if (attempts > state.environment.remainingFood) {
-          attempts = state.environment.remainingFood;
-        }
-        while (attempts > 0) {
-          attempts--;
-          const gatherSucces = Math.random() < plantSearchSkill;
-          if (gatherSucces) {
-            state.environment.remainingFood--;
-            state.logPlantSearch(true);
-            return EnergyConstants.anyAction + EnergyConstants.plantSearchAction;
-          }
-        }
+    static isPossible(individual, state) {
+      const x = individual.location.x;
+      const y = individual.location.y;
+      return state.space.plants[x][y] > 0;
+    }
+    static execute(individual, state, metrics) {
+      const plantAvailable = state.space.plants[individual.location.x][individual.location.y];
+      if (plantAvailable <= 0) {
+        metrics.logPlantSearch(false);
+        return EnergyConstants.anyAction;
       }
-      state.logPlantSearch(false);
-      return EnergyConstants.anyAction;
+      const plantSearchSkill = individual.skills.plantSearch.value;
+      const plantEaten = plantAvailable * plantSearchSkill;
+      const maxEnergyGained = plantEaten * EnergyConstants.energyPerPlant * individual.diet.plant.value;
+      const energyGained = Math.min(maxEnergyGained, EnergyConstants.maxEatPlantEnergy);
+      const plantRemaining = Math.max(0, plantAvailable - plantEaten);
+      state.space.plants[individual.location.x][individual.location.y] = plantRemaining;
+      metrics.logPlantSearch(true);
+      return EnergyConstants.anyAction + energyGained;
     }
   };
-  var HuntAction = class _HuntAction extends Action {
-    static isPossible(_individual, _state) {
-      return true;
+  var HuntAction = class extends Action {
+    static weight(individual) {
+      return individual.diet.meat.value;
+    }
+    static isPossible(individual, state) {
+      const huntingTiles = state.space.huntingRange[individual.location.x][individual.location.y];
+      for (let t = 0; t < huntingTiles.length; t++) {
+        const x = huntingTiles[t].x;
+        const y = huntingTiles[t].y;
+        if (state.space.animals[x][y].length > 0) return true;
+      }
+      return false;
     }
     static isPossibleVictim(individual, victim) {
+      if (victim.energy <= -1 * EnergyConstants.anyAction) {
+        return false;
+      }
+      if (1.5 * victim.diet.meat.value > individual.diet.meat.value) {
+        return true;
+      }
       if (victim.deathDay) {
         return false;
       }
@@ -149,306 +159,121 @@
       }
       return true;
     }
-    static execute(individual, state) {
-      const hunterAdvantage = individual.skills.hunt.value + individual.traits.size.value;
-      let attempts = Math.round(Constants.huntAttempts * (1 - individual.traits.alertness.value));
-      if (attempts > state.individuals.length) {
-        attempts = state.individuals.length;
-      }
-      while (attempts > 0) {
-        attempts--;
-        const victim = state.individuals[Math.floor(Math.random() * state.individuals.length)];
-        if (!_HuntAction.isPossibleVictim(individual, victim)) {
-          continue;
-        }
-        const victimAdvantage = victim.traits.size.value + victim.traits.alertness.value + victim.extraAlertness;
-        const outcome = Math.random() * (hunterAdvantage + victimAdvantage);
-        const succes = outcome < hunterAdvantage;
-        if (succes) {
+    static execute(individual, state, metrics) {
+      const hunterAdvantage = individual.skills.hunt.value;
+      const tiles = state.space.huntingRange[individual.location.x][individual.location.y];
+      for (let t = 0; t < tiles.length; t++) {
+        const animals = state.space.animals[tiles[t].x][tiles[t].y];
+        for (let i = 0; i < animals.length; i++) {
+          const victim = animals[i];
+          if (!this.isPossibleVictim(individual, victim)) continue;
+          const victimAdvantage = victim.traits.size.value;
+          const outcome = Math.random() * (hunterAdvantage + victimAdvantage);
+          if (outcome > victimAdvantage) {
+            continue;
+          }
           victim.dieEaten(state.day);
-          state.logHunt(true);
-          return EnergyConstants.anyAction + EnergyConstants.huntAction;
-        } else {
-          victim.extraAlertness++;
+          state.space.removeAnimal(victim);
+          metrics.logHunt(true);
+          state.space.moveIndividual(individual, victim.location);
+          const gainedEnergy = Math.min(EnergyConstants.maxHuntEnergy, victim.energy * individual.skills.hunt.value);
+          return EnergyConstants.anyAction + gainedEnergy;
         }
       }
-      state.logHunt(false);
+      metrics.logHunt(false);
       return EnergyConstants.anyAction;
     }
   };
-  var LearnSkillAction = class extends Action {
-    static isPossible(individual, _state) {
-      return individual.energy > EnergyConstants.bufferForReproduction;
+  var MoveAction = class extends Action {
+    static weight(individual) {
+      return individual.brain.move.value;
     }
-    static execute(individual, state) {
-      individual.skills.learnRandom();
-      state.logLearn();
-      return EnergyConstants.anyAction + EnergyConstants.learnAction;
+    static isPossible(individual, _state) {
+      return individual.energy > -1 * EnergyConstants.moveAction;
+    }
+    static execute(individual, state, metrics) {
+      const nextLocation = state.space.randomNeighbourLocation(individual.location, 1);
+      state.space.moveIndividual(individual, nextLocation);
+      metrics.logMove();
+      return EnergyConstants.anyAction + EnergyConstants.moveAction;
     }
   };
   var ReproduceAction = class extends Action {
+    static weight(individual) {
+      return individual.brain.reproduce.value;
+    }
     static isPossible(individual, state) {
       const isAdult = individual.getAge(state.day) >= Constants.reproductiveAge;
       const hasEnergy = individual.energy > EnergyConstants.bufferForReproduction;
       return isAdult && hasEnergy;
     }
-    static execute(individual, state) {
+    static execute(individual, state, metrics) {
       const spendableEnergy = Math.floor(individual.energy - EnergyConstants.bufferForReproduction);
       const numberOfChildren = Math.min(Constants.maxChildrenPerReproduction, spendableEnergy);
       for (let i = 0; i < numberOfChildren; i++) {
-        const baby = individual.createChild(state.day);
+        const babyLocation = state.space.randomNeighbourLocation(individual.location, 3);
+        const baby = individual.createChild(babyLocation, state.day);
         state.saveIndividual(baby);
       }
-      state.logReproduce(numberOfChildren);
+      metrics.logReproduce(numberOfChildren);
       return EnergyConstants.anyAction + EnergyConstants.reproductionPerChild * numberOfChildren;
     }
   };
 
-  // src/simulation/activities/decision.ts
-  var Decision = class extends Activity {
-    // aOrB meaning: low -> A more likely, high -> B more likely
-    static decide(aOrB, possibleA, possibleB) {
-      if (possibleA && possibleB) {
-        return Math.random() < aOrB ? "b" : "a";
-      } else if (possibleA) {
-        return "a";
-      } else if (possibleB) {
-        return "b";
-      } else {
-        return null;
-      }
+  // src/simulation/action/decision.ts
+  var Decision = class extends Action {
+    static options;
+    static onlyPossibleActions;
+    static isPossible(_individual, _state) {
+      return true;
     }
-  };
-  var MainDecision = class extends Decision {
-    static isPossible(individual, _state) {
-      return individual.deathDay == null;
-    }
-    static execute(individual, state) {
-      if (individual.getAge(state.day) < 2) {
-        return GrowUpAction.execute(individual, state);
-      }
-      const surviveOrLearn = individual.brain.surviveOrLearn.value;
-      const possibleSurvive = EatOrReproduceDecision.isPossible(individual, state);
-      const possibleLearn = LearnSkillAction.isPossible(individual, state);
-      const choice = Decision.decide(surviveOrLearn, possibleSurvive, possibleLearn);
-      if (choice === "a") return EatOrReproduceDecision.execute(individual, state);
-      if (choice === "b") return LearnSkillAction.execute(individual, state);
-      return IdleAction.execute(individual, state);
-    }
-  };
-  var EatOrReproduceDecision = class extends Decision {
-    static isPossible(individual, state) {
-      return individual.hasHunger() || ReproduceAction.isPossible(individual, state);
-    }
-    static execute(individual, state) {
-      const eatOrReproduce = individual.brain.eatOrReproduce.value;
-      const possibleEat = PlantOrMeatDecision.isPossible(individual, state);
-      const possibleReproduce = ReproduceAction.isPossible(individual, state);
-      const choice = Decision.decide(eatOrReproduce, possibleEat, possibleReproduce);
-      if (choice === "a") return PlantOrMeatDecision.execute(individual, state);
-      if (choice === "b") return ReproduceAction.execute(individual, state);
-      return IdleAction.execute(individual, state);
-    }
-  };
-  var PlantOrMeatDecision = class extends Decision {
-    static isPossible(individual, state) {
-      return individual.hasHunger() && (PlantSearchAction.isPossible(individual, state) || HuntAction.isPossible(individual, state));
-    }
-    static execute(individual, state) {
-      const plantOrMeat = individual.brain.plantOrMeat.value;
-      const possiblePlant = PlantSearchAction.isPossible(individual, state);
-      const possibleMeat = HuntAction.isPossible(individual, state);
-      const choice = Decision.decide(plantOrMeat, possiblePlant, possibleMeat);
-      if (choice === "a") return PlantSearchAction.execute(individual, state);
-      if (choice === "b") return HuntAction.execute(individual, state);
-      return IdleAction.execute(individual, state);
-    }
-  };
-
-  // src/simulation/metrics.ts
-  var SimulationMetrics = class {
-    latestDayMetrics = new DayMetrics();
-    dayMetrics = [this.latestDayMetrics];
-    addnewDay() {
-      this.latestDayMetrics = new DayMetrics();
-      this.dayMetrics.push(this.latestDayMetrics);
-    }
-    flush() {
-      const flushed = this.dayMetrics;
-      this.dayMetrics = [];
-      return flushed;
-    }
-    logGrowUp() {
-      this.latestDayMetrics.logGrowUp();
-    }
-    logLearn() {
-      this.latestDayMetrics.logLearn();
-    }
-    logPlantSearch(succesful) {
-      this.latestDayMetrics.logPlantSearch(succesful);
-    }
-    logHunt(succesful) {
-      this.latestDayMetrics.logHunt(succesful);
-    }
-    logReproduce(count) {
-      this.latestDayMetrics.logReproduce(count);
-    }
-    calculateRemainingMetrics(state) {
-      this.latestDayMetrics.calculateRemainingMetrics(state);
-    }
-  };
-  var DayMetrics = class {
-    day = 0;
-    population = new PopulationMetrics();
-    food = new FoodMetrics();
-    genetics = new GeneticsMetrics();
-    dietDistribution = new DietDistributionMetrics();
-    starvedDietDistribution = new DietDistributionMetrics();
-    eatenDietDistribution = new DietDistributionMetrics();
-    actions = new ActionMetrics();
-    logGrowUp() {
-      this.actions.logGrowUp();
-    }
-    logLearn() {
-      this.actions.logLearn();
-    }
-    logPlantSearch(succesful) {
-      this.actions.logPlantSearch(succesful);
-    }
-    logHunt(succesful) {
-      this.actions.logHunt(succesful);
-    }
-    logReproduce(count) {
-      this.actions.logReproduce(count);
-    }
-    calculateRemainingMetrics(state) {
-      const living = state.individuals.filter((i) => i.deathDay == null);
-      const dead = state.individuals.filter((i) => i.deathDay != null);
-      const starved = dead.filter((i) => i.starved);
-      const eaten = dead.filter((i) => i.eaten);
-      this.day = state.day;
-      this.population.calculate(state.day, state.individuals, living, dead, eaten, starved);
-      this.food.calculate(state.environment);
-      this.genetics.calculate(state);
-      this.dietDistribution.calculate(living);
-      this.starvedDietDistribution.calculate(starved);
-      this.eatenDietDistribution.calculate(eaten);
-    }
-  };
-  var PopulationMetrics = class {
-    alive = 0;
-    born = 0;
-    dead = 0;
-    eaten = 0;
-    starved = 0;
-    calculate(day, all, living, dead, eaten = [], starved = []) {
-      this.alive = living.length;
-      this.born = all.filter((i) => i.birthday === day).length;
-      this.dead = dead.length;
-      this.eaten = eaten.length;
-      this.starved = starved.length;
-    }
-  };
-  var FoodMetrics = class {
-    uneaten = 0;
-    grown = 0;
-    remaining = 0;
-    calculate(environment) {
-      this.uneaten = environment.uneatenFood;
-      this.grown = environment.grownFood;
-      this.remaining = environment.remainingFood;
-    }
-  };
-  var GeneticsMetrics = class {
-    surviveOrLearn = new GeneMetrics();
-    eatOrReproduce = new GeneMetrics();
-    plantOrMeat = new GeneMetrics();
-    plantSearchSkill = new GeneMetrics();
-    huntSkill = new GeneMetrics();
-    alertnessTrait = new GeneMetrics();
-    sizeTrait = new GeneMetrics();
-    calculate(state) {
-      for (const individual of state.individuals) {
-        if (individual.deathDay != null) {
+    static execute(individual, state, metrics) {
+      let weightedActions = [];
+      for (const actionClass of this.options) {
+        const weight = actionClass.weight(individual);
+        if (weight <= 0) {
           continue;
         }
-        this.surviveOrLearn.counts[individual.brain.surviveOrLearn.bucket - 1]++;
-        this.eatOrReproduce.counts[individual.brain.eatOrReproduce.bucket - 1]++;
-        this.plantOrMeat.counts[individual.brain.plantOrMeat.bucket - 1]++;
-        this.plantSearchSkill.counts[individual.skills.plantSearch.bucket - 1]++;
-        this.huntSkill.counts[individual.skills.hunt.bucket - 1]++;
-        this.alertnessTrait.counts[individual.traits.alertness.bucket - 1]++;
-        this.sizeTrait.counts[individual.traits.size.bucket - 1]++;
+        const isPossible = actionClass.isPossible(individual, state);
+        if (this.onlyPossibleActions && !isPossible) {
+          continue;
+        }
+        weightedActions.push({ weight, actionClass });
       }
+      if (weightedActions.length === 0) {
+        return IdleAction.execute(individual, state, metrics);
+      }
+      if (weightedActions.length === 1) {
+        return weightedActions[0].actionClass.execute(individual, state, metrics);
+      }
+      const totalWeight = weightedActions.reduce((sum, { weight }) => sum + weight, 0);
+      const randomWeight = Math.random() * totalWeight;
+      let cumulativeWeight = 0;
+      for (let i = 0; i < weightedActions.length; i++) {
+        cumulativeWeight += weightedActions[i].weight;
+        if (randomWeight < cumulativeWeight) {
+          const chosenAction = weightedActions[i].actionClass;
+          return chosenAction.execute(individual, state, metrics);
+        }
+      }
+      return IdleAction.execute(individual, state, metrics);
     }
   };
-  var GeneMetrics = class {
-    counts;
-    constructor() {
-      this.counts = [];
-      for (let i = 1; i <= 9; i++) {
-        this.counts.push(0);
-      }
+  var DietDecision = class extends Decision {
+    static options = [PlantSearchAction, HuntAction];
+    static onlyPossibleActions = false;
+    static weight(individual) {
+      return individual.brain.eat.value;
     }
   };
-  var DietDistributionMetrics = class {
-    bucketCounts;
-    constructor() {
-      this.bucketCounts = [];
-      for (let i = 0; i < 9; i++) {
-        this.bucketCounts[i] = 0;
-      }
+  var BrainDecision = class extends Decision {
+    static options = [MoveAction, DietDecision, ReproduceAction];
+    static onlyPossibleActions = true;
+    static weight(_individual) {
+      return 1;
     }
-    calculate(living) {
-      for (const individual of living) {
-        const bucket = individual.brain.plantOrMeat.bucket;
-        this.bucketCounts[bucket - 1]++;
-      }
-    }
-  };
-  var ActionMetrics = class {
-    growUp = 0;
-    learn = 0;
-    survive = 0;
-    reproduce = 0;
-    offspringCounts = [];
-    eat = 0;
-    plantSearch = 0;
-    hunt = 0;
-    plantSearchSuccess = 0;
-    plantSearchFail = 0;
-    huntSuccess = 0;
-    huntFail = 0;
-    logGrowUp() {
-      this.growUp++;
-    }
-    logLearn() {
-      this.learn++;
-    }
-    logPlantSearch(succesful) {
-      this.survive++;
-      this.eat++;
-      this.plantSearch++;
-      if (succesful) {
-        this.plantSearchSuccess++;
-      } else {
-        this.plantSearchFail++;
-      }
-    }
-    logHunt(succesful) {
-      this.survive++;
-      this.eat++;
-      this.hunt++;
-      if (succesful) {
-        this.huntSuccess++;
-      } else {
-        this.huntFail++;
-      }
-    }
-    logReproduce(count) {
-      this.survive++;
-      this.reproduce++;
-      this.offspringCounts.push(count);
+    static isPossible(individual, state) {
+      return individual.getAge(state.day) >= 2;
     }
   };
 
@@ -464,10 +289,7 @@
         this.state.metrics.addnewDay();
         this.state.day++;
         this.state.updateEnvironment();
-        for (const individual of this.state.individuals) {
-          individual.extraAlertness = 0;
-        }
-        const actionMetrics = this.actAllIndividuals();
+        this.actAllIndividuals(this.state.metrics.latestDayMetrics.actions);
         this.starveIndividuals();
         this.state.metrics.calculateRemainingMetrics(this.state);
         const allDead = this.state.individuals.filter((individual) => individual.deathDay == null).length == 0;
@@ -477,29 +299,31 @@
       }
       return true;
     }
-    actAllIndividuals() {
-      const actionMetrics = new ActionMetrics();
+    actAllIndividuals(actionMetrics) {
       const individuals = this.state.individuals;
       for (let i = individuals.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1));
         [individuals[i], individuals[j]] = [individuals[j], individuals[i]];
       }
       for (const individual of individuals) {
-        if (MainDecision.isPossible(individual, this.state)) {
-          const gainedEnergy = MainDecision.execute(individual, this.state);
+        if (BrainDecision.isPossible(individual, this.state)) {
+          const gainedEnergy = BrainDecision.execute(individual, this.state, this.state.metrics.latestDayMetrics.actions);
           individual.energy += gainedEnergy;
           if (individual.energy > EnergyConstants.max) {
             individual.energy = EnergyConstants.max;
           }
         }
       }
-      return actionMetrics;
     }
     starveIndividuals() {
       let starvedIndividuals = 0;
       for (let individual of this.state.individuals) {
-        if (individual.energy <= 0 && individual.deathDay == null && individual.getAge(this.state.day) > 0) {
+        const lowEnergy = individual.energy <= 0;
+        const alive = individual.deathDay == null;
+        const notBornToday = individual.getAge(this.state.day) > 0;
+        if (lowEnergy && alive && notBornToday) {
           individual.dieStarved(this.state.day);
+          this.state.space.removeAnimal(individual);
           starvedIndividuals++;
         }
       }
@@ -508,44 +332,34 @@
 
   // src/simulation/environment.ts
   var Environment = class {
-    uneatenFood;
-    grownFood;
-    remainingFood;
-    foodRegeneration;
-    foodRegenerationIncreasing;
-    maxFood;
-    constructor(maxFood) {
-      this.maxFood = maxFood;
-      this.uneatenFood = -1;
-      this.grownFood = -1;
-      this.remainingFood = 0;
-      this.foodRegeneration = Math.random() * (EnvironmentConstants.maxFoodRegeneration - EnvironmentConstants.minFoodRegeneration) + EnvironmentConstants.minFoodRegeneration;
-      this.foodRegenerationIncreasing = Math.random() < 0.5;
+    // foodRegeneration: number;
+    // foodRegenerationIncreasing: boolean;
+    space;
+    constructor(space) {
+      this.space = space;
       this.nextDay();
     }
-    toFoodString() {
-      return `${this.uneatenFood} -> ${this.grownFood} -> ${this.remainingFood}`;
-    }
-    updateSeason() {
-      this.foodRegeneration += this.foodRegenerationIncreasing ? EnvironmentConstants.stepFoodRegeneration : -EnvironmentConstants.stepFoodRegeneration;
-      if (this.foodRegeneration > EnvironmentConstants.maxFoodRegeneration) {
-        this.foodRegeneration = EnvironmentConstants.maxFoodRegeneration;
-        this.foodRegenerationIncreasing = false;
-      } else if (this.foodRegeneration < EnvironmentConstants.minFoodRegeneration) {
-        this.foodRegeneration = EnvironmentConstants.minFoodRegeneration;
-        this.foodRegenerationIncreasing = true;
-      }
-    }
+    // updateSeason() {
+    //     this.foodRegeneration += this.foodRegenerationIncreasing ? EnvironmentConstants.stepFoodRegeneration : -EnvironmentConstants.stepFoodRegeneration;
+    //     if (this.foodRegeneration > EnvironmentConstants.maxFoodRegeneration) {
+    //         this.foodRegeneration = EnvironmentConstants.maxFoodRegeneration;
+    //         this.foodRegenerationIncreasing = false;
+    //     } else if (this.foodRegeneration < EnvironmentConstants.minFoodRegeneration) {
+    //         this.foodRegeneration = EnvironmentConstants.minFoodRegeneration;
+    //         this.foodRegenerationIncreasing = true;
+    //     }
+    // }
     nextDay() {
-      this.uneatenFood = this.remainingFood;
-      this.grownFood = Math.round(this.uneatenFood * EnvironmentConstants.preserveRemainingFood + this.foodRegeneration);
-      this.updateSeason();
-      this.remainingFood = this.grownFood;
+      for (let x = 0; x < this.space.width; x++) {
+        for (let y = 0; y < this.space.height; y++) {
+          this.space.plants[x][y] = Math.min(1, this.space.plants[x][y] + EnvironmentConstants.plantGrowthPerTile);
+        }
+      }
     }
   };
 
   // src/ui/color.ts
-  var Color = class _Color {
+  var Color = class {
     static green = "rgb(22, 163, 74)";
     // green-600
     static blue = "rgb(37, 99, 235)";
@@ -560,24 +374,26 @@
     // rose-400 (pink-red)
     static purple = "rgb(167, 139, 250)";
     // violet-400
+    static rgbToRgba(rgb, alpha) {
+      return rgb.replace("rgb(", "rgba(").replace(")", `, ${alpha.toFixed(2)})`);
+    }
+  };
+  var Hue = class _Hue {
     static greenHue = 140 / 360;
     static blueHue = 220 / 360;
     static redHue = 0 / 360;
     static purpleHue = 270 / 360;
     static orangeHue = 30 / 360;
     static yellowHue = 55 / 360;
-    static defaultSaturation = 1;
+    static defaultSaturation = 0.5;
     static greenToRedRange = this.hueRange(this.greenHue, this.redHue, 9, 0.9, 0.4);
     static hueRange(fromHue, toHue, steps, saturation, luminance) {
       return Array.from({ length: steps }, (_, i) => {
         const huePerStep = steps > 1 ? i / (steps - 1) : 0;
         const hue = fromHue + huePerStep * (toHue - fromHue);
-        const [r, g, b] = _Color.hslToRgb(hue, saturation, luminance);
+        const [r, g, b] = _Hue.hslToRgb(hue, saturation, luminance);
         return `rgb(${r}, ${g}, ${b})`;
       });
-    }
-    static rgbToRgba(rgb, alpha) {
-      return rgb.replace("rgb(", "rgba(").replace(")", `, ${alpha.toFixed(2)})`);
     }
     static hslToRgb(h, s, l) {
       const a = s * Math.min(l, 1 - l);
@@ -587,16 +403,16 @@
       };
       return [Math.round(f(0) * 255), Math.round(f(8) * 255), Math.round(f(4) * 255)];
     }
-    static genomeToColor(brain) {
-      const herbivoreValue = 1 - brain.plantOrMeat.value;
+    static genomeToColor(diet) {
+      const herbivoreValue = diet.meat.value;
       const minValue = 0.1;
       const maxValue = 0.9;
       const clampedHerbivoreValue = Math.min(maxValue, Math.max(minValue, herbivoreValue));
       const hue = (clampedHerbivoreValue - minValue) / (maxValue - minValue) * 130;
-      const eatValue = 1 - brain.surviveOrLearn.value;
+      const eatValue = 0.8;
       const saturation = 0.5 + eatValue / 2;
       const lightness = 0.6;
-      const [r, g, b] = _Color.hslToRgb(hue / 360, saturation, lightness);
+      const [r, g, b] = _Hue.hslToRgb(hue / 360, saturation, lightness);
       return `rgb(${r}, ${g}, ${b})`;
     }
   };
@@ -648,6 +464,7 @@
 
   // src/simulation/genetics/chromosome.ts
   var Chromosome = class {
+    static chromosomeName = "";
     static geneKeys = [];
     genes;
     constructor(genes) {
@@ -673,31 +490,75 @@
       return totalSteps <= maxTotalSteps;
     }
   };
+  var RelativeChromosome = class extends Chromosome {
+    constructor(genes) {
+      super(genes);
+      this.scaleGenes();
+    }
+    scaleGenes() {
+      const totalValue = Object.values(this.genes).reduce((sum, gene) => sum + gene.value, 0);
+      if (totalValue === 0) {
+        const equalValue = 1 / Object.keys(this.genes).length;
+        for (const key of Object.keys(this.genes)) {
+          this.genes[key] = new Gene(equalValue);
+        }
+      } else {
+        for (const key of Object.keys(this.genes)) {
+          const gene = this.genes[key];
+          this.genes[key] = new Gene(gene.value / totalValue);
+        }
+      }
+    }
+  };
 
   // src/simulation/genetics/brain.ts
   var BrainGenes = /* @__PURE__ */ ((BrainGenes2) => {
-    BrainGenes2["SurviveOrLearn"] = "SurviveOrLearn";
-    BrainGenes2["EatOrReproduce"] = "EatOrReproduce";
-    BrainGenes2["PlantOrMeat"] = "PlantOrMeat";
+    BrainGenes2["Move"] = "Move";
+    BrainGenes2["Eat"] = "Eat";
+    BrainGenes2["Reproduce"] = "Reproduce";
     return BrainGenes2;
   })(BrainGenes || {});
-  var Brain = class _Brain extends Chromosome {
+  var Brain = class _Brain extends RelativeChromosome {
+    static chromosomeName = "Brain";
     static geneKeys = Object.values(BrainGenes);
     static neutral() {
       const neutralGenes = {};
-      neutralGenes["SurviveOrLearn" /* SurviveOrLearn */] = new Gene(1 / 9);
-      neutralGenes["PlantOrMeat" /* PlantOrMeat */] = new Gene(3 / 9);
-      neutralGenes["EatOrReproduce" /* EatOrReproduce */] = new Gene(3 / 9);
+      neutralGenes["Move" /* Move */] = new Gene(2 / 9);
+      neutralGenes["Eat" /* Eat */] = new Gene(5 / 9);
+      neutralGenes["Reproduce" /* Reproduce */] = new Gene(2 / 9);
       return new _Brain(neutralGenes);
     }
-    get surviveOrLearn() {
-      return this.genes["SurviveOrLearn" /* SurviveOrLearn */];
+    get move() {
+      return this.genes["Move" /* Move */];
     }
-    get plantOrMeat() {
-      return this.genes["PlantOrMeat" /* PlantOrMeat */];
+    get eat() {
+      return this.genes["Eat" /* Eat */];
     }
-    get eatOrReproduce() {
-      return this.genes["EatOrReproduce" /* EatOrReproduce */];
+    get reproduce() {
+      return this.genes["Reproduce" /* Reproduce */];
+    }
+  };
+
+  // src/simulation/genetics/diet.ts
+  var DietGenes = /* @__PURE__ */ ((DietGenes2) => {
+    DietGenes2["Plant"] = "Plant";
+    DietGenes2["Meat"] = "Meat";
+    return DietGenes2;
+  })(DietGenes || {});
+  var Diet = class _Diet extends RelativeChromosome {
+    static chromosomeName = "Diet";
+    static geneKeys = Object.values(DietGenes);
+    static neutral() {
+      const neutralGenes = {};
+      neutralGenes["Plant" /* Plant */] = new Gene(1);
+      neutralGenes["Meat" /* Meat */] = new Gene(0);
+      return new _Diet(neutralGenes);
+    }
+    get plant() {
+      return this.genes["Plant" /* Plant */];
+    }
+    get meat() {
+      return this.genes["Meat" /* Meat */];
     }
   };
 
@@ -707,12 +568,13 @@
     SkillsGenes2["Hunt"] = "Hunt";
     return SkillsGenes2;
   })(SkillsGenes || {});
-  var Skills = class _Skills extends Chromosome {
+  var Skills = class _Skills extends RelativeChromosome {
+    static chromosomeName = "Skills";
     static geneKeys = Object.values(SkillsGenes);
     static neutral() {
       const genes = {};
-      genes["PlantSearch" /* PlantSearch */] = new Gene(2 / 9);
-      genes["Hunt" /* Hunt */] = new Gene(1 / 9);
+      genes["PlantSearch" /* PlantSearch */] = new Gene(1 / 2);
+      genes["Hunt" /* Hunt */] = new Gene(1 / 2);
       return new _Skills(genes);
     }
     learnRandom() {
@@ -733,20 +595,16 @@
 
   // src/simulation/genetics/traits.ts
   var TraitGenes = /* @__PURE__ */ ((TraitGenes2) => {
-    TraitGenes2["Alertness"] = "Alertness";
     TraitGenes2["Size"] = "Size";
     return TraitGenes2;
   })(TraitGenes || {});
   var Traits = class _Traits extends Chromosome {
+    static chromosomeName = "Traits";
     static geneKeys = Object.values(TraitGenes);
     static neutral() {
       const genes = {};
-      genes["Alertness" /* Alertness */] = new Gene(1 / 9);
       genes["Size" /* Size */] = new Gene(1 / 9);
       return new _Traits(genes);
-    }
-    get alertness() {
-      return this.genes["Alertness" /* Alertness */];
     }
     get size() {
       return this.genes["Size" /* Size */];
@@ -755,23 +613,28 @@
 
   // src/simulation/individual.ts
   var Individual = class _Individual {
-    id = "";
+    // TODO: move to separate genome class
+    static allChromosomes = [Brain, Diet, Traits, Skills];
+    id = -1;
     // assigned by state
     birthday;
     parent;
     deathDay = null;
     eaten = false;
     starved = false;
-    extraAlertness = 0;
     brain;
+    diet;
     traits;
     skills;
     energy;
     children = [];
-    constructor(birthday, parent, brain, traits, skills) {
+    location;
+    constructor(location, birthday, parent, brain, diet, traits, skills) {
+      this.location = location;
       this.birthday = birthday;
       this.parent = parent;
       this.brain = brain;
+      this.diet = diet;
       this.traits = traits;
       this.skills = skills;
       this.energy = EnergyConstants.whenBorn;
@@ -780,7 +643,7 @@
       return this.brain.toString();
     }
     toColor() {
-      return Color.genomeToColor(this.brain);
+      return Hue.genomeToColor(this.diet);
     }
     getAge(today) {
       if (this.deathDay != null) {
@@ -788,14 +651,15 @@
       }
       return today - this.birthday;
     }
-    static neutral(birthday) {
-      return new _Individual(birthday, null, Brain.neutral(), Traits.neutral(), Skills.neutral());
+    static neutral(location, birthday) {
+      return new _Individual(location, birthday, null, Brain.neutral(), Diet.neutral(), Traits.neutral(), Skills.neutral());
     }
-    createChild(today) {
+    createChild(location, today) {
       const evolvedBrain = this.brain.mutatedCopy(true);
+      const evolvedDiet = this.diet.mutatedCopy(true);
       const evolvedTraits = this.traits.mutatedCopy(false);
       const evolvedSkills = this.skills.mutatedCopy(false);
-      const baby = new _Individual(today, this, evolvedBrain, evolvedTraits, evolvedSkills);
+      const baby = new _Individual(location, today, this, evolvedBrain, evolvedDiet, evolvedTraits, evolvedSkills);
       this.children.push(baby);
       return baby;
     }
@@ -811,11 +675,11 @@
         generation++;
       }
       offspring.pop();
-      const offSpringCounts = offspring.map((generation2) => generation2.filter((individual) => includeDead || individual.deathDay == null).length);
-      if (offSpringCounts[offSpringCounts.length - 1] == 0) {
-        offSpringCounts.pop();
+      const offspringCounts = offspring.map((generation2) => generation2.filter((individual) => includeDead || individual.deathDay == null).length);
+      if (offspringCounts[offspringCounts.length - 1] == 0) {
+        offspringCounts.pop();
       }
-      return offSpringCounts;
+      return offspringCounts;
     }
     getOffspringSum(includeDead = false) {
       return this.getOffspringCounts(includeDead).reduce((sum, val) => sum + val, 0);
@@ -853,35 +717,301 @@
     }
     die(today) {
       this.deathDay = today;
-    }
-    // to clean up references to dead individuals
-    pruneDeadParents(deadGenerations = 0) {
-      let parent = this.parent;
-      if (parent == null) {
-        return;
-      } else if (parent.deathDay == null) {
-        parent.pruneDeadParents(0);
-      } else if (deadGenerations >= 2) {
-        this.parent = null;
-        this.children = [];
-      } else {
-        parent.pruneDeadParents(deadGenerations + 1);
+      if (this.parent) {
+        this.parent.children = this.parent.children.filter((c) => c.id !== this.id);
+      }
+      for (let child of this.children) {
+        child.parent = null;
       }
     }
   };
 
-  // src/simulation/name.ts
-  function intToName(num) {
-    const consonants = "bcdfghjklmnpqrstvwxyz";
-    const vowels = "aeiou";
-    const c = consonants.length;
-    const v = vowels.length;
-    const firstIdx = num % c;
-    const vowelIdx = Math.floor(num / c) % v;
-    const lastIdx = Math.floor(num / (c * v)) % c;
-    const name = consonants[firstIdx].toUpperCase() + vowels[vowelIdx] + consonants[lastIdx];
-    return name;
-  }
+  // src/simulation/metrics.ts
+  var SimulationMetrics = class {
+    latestDayMetrics = new DayMetrics();
+    dayMetrics = [this.latestDayMetrics];
+    addnewDay() {
+      this.latestDayMetrics = new DayMetrics();
+      this.dayMetrics.push(this.latestDayMetrics);
+    }
+    flush() {
+      const flushed = this.dayMetrics;
+      this.dayMetrics = [];
+      return flushed;
+    }
+    calculateRemainingMetrics(state) {
+      this.latestDayMetrics.calculateRemainingMetrics(state);
+    }
+  };
+  var DayMetrics = class {
+    day = 0;
+    population = new PopulationMetrics();
+    food = new FoodMetrics();
+    genetics = new GeneticsMetrics();
+    dietDistribution = new DietDistributionMetrics();
+    starvedDietDistribution = new DietDistributionMetrics();
+    eatenDietDistribution = new DietDistributionMetrics();
+    actions = new ActionMetrics();
+    calculateRemainingMetrics(state) {
+      const living = state.individuals.filter((i) => i.deathDay == null);
+      const dead = state.individuals.filter((i) => i.deathDay != null);
+      const starved = dead.filter((i) => i.starved);
+      const eaten = dead.filter((i) => i.eaten);
+      this.day = state.day;
+      this.population.calculate(state.day, state.individuals, living, dead, eaten, starved);
+      this.food.calculate(state.space);
+      this.genetics.calculate(state);
+      this.dietDistribution.calculate(living);
+      this.starvedDietDistribution.calculate(starved);
+      this.eatenDietDistribution.calculate(eaten);
+    }
+  };
+  var PopulationMetrics = class {
+    alive = 0;
+    born = 0;
+    dead = 0;
+    eaten = 0;
+    starved = 0;
+    calculate(day, all, living, dead, eaten = [], starved = []) {
+      this.alive = living.length;
+      this.born = all.filter((i) => i.birthday === day).length;
+      this.dead = dead.length;
+      this.eaten = eaten.length;
+      this.starved = starved.length;
+    }
+  };
+  var FoodMetrics = class {
+    plantDensity = 0;
+    calculate(space) {
+      let totalPlants = 0;
+      let count = 0;
+      for (let x = 0; x < space.width; x++) {
+        for (let y = 0; y < space.height; y++) {
+          totalPlants += space.plants[x][y];
+          count++;
+        }
+      }
+      this.plantDensity = count > 0 ? totalPlants / count : 0;
+    }
+  };
+  var GeneticsMetrics = class {
+    chromosomes = [];
+    constructor() {
+      for (const chromosome of Individual.allChromosomes) {
+        this.chromosomes.push(new ChromosomeMetrics(chromosome.toString(), chromosome.geneKeys));
+      }
+    }
+    calculate(state) {
+      for (const individual of state.individuals) {
+        if (individual.deathDay != null) {
+          continue;
+        }
+        const chromosomes = [individual.brain, individual.diet, individual.traits, individual.skills];
+        for (let i = 0; i < chromosomes.length; i++) {
+          this.chromosomes[i].calculate(chromosomes[i]);
+        }
+      }
+    }
+  };
+  var ChromosomeMetrics = class {
+    genes = [];
+    name = "";
+    constructor(name, geneNames) {
+      this.name = name;
+      for (const geneName of geneNames) {
+        this.genes.push(new GeneMetrics(geneName));
+      }
+    }
+    calculate(chromosome) {
+      const geneKeys = Object.keys(chromosome.genes);
+      for (let i = 0; i < geneKeys.length; i++) {
+        const gene = chromosome.genes[geneKeys[i]];
+        this.genes[i].counts[gene.bucket - 1]++;
+      }
+    }
+  };
+  var GeneMetrics = class {
+    name = "";
+    counts;
+    constructor(name) {
+      this.name = name;
+      this.counts = [];
+      for (let i = 1; i <= 9; i++) {
+        this.counts.push(0);
+      }
+    }
+  };
+  var DietDistributionMetrics = class {
+    bucketCounts;
+    constructor() {
+      this.bucketCounts = [];
+      for (let i = 0; i < 9; i++) {
+        this.bucketCounts[i] = 0;
+      }
+    }
+    calculate(living) {
+      for (const individual of living) {
+        const bucket = individual.diet.meat.bucket;
+        this.bucketCounts[bucket - 1]++;
+      }
+    }
+  };
+  var ActionMetrics = class {
+    idle = 0;
+    growUp = 0;
+    move = 0;
+    eat = 0;
+    plantSearch = 0;
+    hunt = 0;
+    plantSearchSuccess = 0;
+    plantSearchFail = 0;
+    huntSuccess = 0;
+    huntFail = 0;
+    reproduce = 0;
+    offspringCounts = [];
+    logGrowUp() {
+      this.growUp++;
+    }
+    logIdle() {
+      this.idle++;
+    }
+    logMove() {
+      this.move++;
+    }
+    logPlantSearch(succesful) {
+      this.eat++;
+      this.plantSearch++;
+      if (succesful) {
+        this.plantSearchSuccess++;
+      } else {
+        this.plantSearchFail++;
+      }
+    }
+    logHunt(succesful) {
+      this.eat++;
+      this.hunt++;
+      if (succesful) {
+        this.huntSuccess++;
+      } else {
+        this.huntFail++;
+      }
+    }
+    logReproduce(count) {
+      this.reproduce++;
+      this.offspringCounts.push(count);
+    }
+  };
+
+  // src/simulation/space.ts
+  var XY = class {
+    x;
+    y;
+    constructor(x, y) {
+      this.x = x;
+      this.y = y;
+    }
+  };
+  var Space = class {
+    width;
+    height;
+    plants = [];
+    animals = [];
+    huntingRange = [];
+    constructor(width, height) {
+      this.width = width;
+      this.height = height;
+      for (let x = 0; x < width; x++) {
+        this.plants[x] = [];
+        this.animals[x] = [];
+        this.huntingRange[x] = [];
+        for (let y = 0; y < height; y++) {
+          const xy = new XY(x, y);
+          this.plants[x][y] = EnvironmentConstants.initialPlantAmount;
+          this.animals[x][y] = [];
+          this.huntingRange[x][y] = this.getHuntingRange(xy);
+        }
+      }
+    }
+    randomEmptyLocation() {
+      const maxAttempts = 10 * this.width * this.height * 10;
+      let x, y;
+      let attempts = 0;
+      do {
+        x = Math.floor(Math.random() * this.width);
+        y = Math.floor(Math.random() * this.height);
+        attempts++;
+      } while (this.animals[x][y].length > 0 && attempts < maxAttempts);
+      return new XY(x, y);
+    }
+    randomNeighbourLocation(xy, maxDistance) {
+      const next = new XY(
+        xy.x + Math.round(Math.random() * 2 * maxDistance - maxDistance),
+        xy.y + Math.round(Math.random() * 2 * maxDistance - maxDistance)
+      );
+      return this.wrapAround(next);
+    }
+    wrapAround(xy) {
+      const wrappedX = this.wrap(xy.x, this.width);
+      const wrappedY = this.wrap(xy.y, this.height);
+      return new XY(wrappedX, wrappedY);
+    }
+    wrap(value, max) {
+      if (value < 0) return max - 1;
+      if (value >= max) return 0;
+      return value;
+    }
+    removeAnimal(individual) {
+      const x = individual.location.x;
+      const y = individual.location.y;
+      if (this.animals[x] && this.animals[x][y]) {
+        const index = this.animals[x][y].indexOf(individual);
+        if (index !== -1) {
+          this.animals[x][y].splice(index, 1);
+        }
+      }
+    }
+    addAnimal(individual) {
+      const x = individual.location.x;
+      const y = individual.location.y;
+      if (this.animals[x] == void 0) {
+        this.animals[x] = [];
+      }
+      if (this.animals[x][y] == void 0) {
+        this.animals[x][y] = [];
+      }
+      this.animals[x][y].push(individual);
+    }
+    moveIndividual(individual, next) {
+      const current = individual.location;
+      const index = this.animals[current.x][current.y].indexOf(individual);
+      if (index !== -1) {
+        this.animals[current.x][current.y].splice(index, 1);
+        if (this.animals[current.x][current.y] == void 0) {
+          this.animals[current.x][current.y] = [];
+        }
+        const wrapped = this.wrapAround(next);
+        if (this.animals[wrapped.x][wrapped.y] == void 0) {
+          this.animals[wrapped.x][wrapped.y] = [];
+        }
+        this.animals[wrapped.x][wrapped.y].push(individual);
+      }
+      individual.location = this.wrapAround(next);
+    }
+    getHuntingRange(xy) {
+      const distance = Constants.huntingDistance;
+      const x = xy.x;
+      const y = xy.y;
+      const tiles = [];
+      for (let dx = -distance; dx <= distance; dx++) {
+        const nx = this.wrap(x + dx, this.width);
+        for (let dy = -distance; dy <= distance; dy++) {
+          const ny = this.wrap(y + dy, this.height);
+          tiles.push(new XY(nx, ny));
+        }
+      }
+      return tiles;
+    }
+  };
 
   // src/simulation/state.ts
   var State = class {
@@ -890,30 +1020,35 @@
     individuals = [];
     individualIdCounter = -1;
     environment;
+    space;
     metrics = new SimulationMetrics();
     constructor() {
       this.day = 0;
-      this.environment = new Environment(50);
+      this.space = new Space(160, 100);
+      this.environment = new Environment(this.space);
       this.createInitialIndividuals();
     }
     createInitialIndividuals() {
-      const firstIndividuals = [
-        Individual.neutral(this.day),
-        Individual.neutral(this.day),
-        Individual.neutral(this.day)
-      ];
-      for (const individual of firstIndividuals) {
+      const amount = 20;
+      for (let i = 0; i < amount; i++) {
+        const location = this.space.randomEmptyLocation();
+        const brain = Brain.neutral().mutatedCopy(false);
+        const diet = Diet.neutral().mutatedCopy(false);
+        const traits = Traits.neutral().mutatedCopy(false);
+        const skills = Skills.neutral().mutatedCopy(false);
+        const individual = new Individual(location, this.day, null, brain, diet, traits, skills);
         this.saveIndividual(individual);
       }
     }
     nextIndividualId() {
       this.individualIdCounter++;
-      return intToName(this.individualIdCounter);
+      return this.individualIdCounter;
     }
     saveIndividual(individual) {
       individual.id = this.nextIndividualId();
       this.individualsById.set(individual.id, individual);
       this.individuals.push(individual);
+      this.space.addAnimal(individual);
     }
     updateEnvironment() {
       this.environment.nextDay();
@@ -924,27 +1059,11 @@
     archiveDeadIndividuals() {
       for (let [individualId, individual] of this.individualsById.entries()) {
         if (individual.deathDay != null) {
+          this.space.removeAnimal(individual);
           this.individualsById.delete(individualId);
-        } else {
-          individual.pruneDeadParents();
         }
       }
       this.individuals = Array.from(this.individualsById.values());
-    }
-    logGrowUp() {
-      this.metrics.logGrowUp();
-    }
-    logLearn() {
-      this.metrics.logLearn();
-    }
-    logPlantSearch(succesful) {
-      this.metrics.logPlantSearch(succesful);
-    }
-    logHunt(succesful) {
-      this.metrics.logHunt(succesful);
-    }
-    logReproduce(count) {
-      this.metrics.logReproduce(count);
     }
   };
 
@@ -992,12 +1111,12 @@
   // src/ui/charts/chartLayout.ts
   var MARGIN = {
     top: 32,
-    right: 32,
+    right: 48,
     bottom: 48,
     left: 8
   };
-  var VISIBLE_DAYS = 500;
-  var MATRIX_CANVAS_HEIGHT = 200;
+  var VISIBLE_DAYS = 300;
+  var MATRIX_CANVAS_HEIGHT = 150;
   var STACKED_BAR_CANVAS_HEIGHT = 300;
   var CANVAS_WIDTH = MARGIN.left + VISIBLE_DAYS + MARGIN.right;
   var TITLE_FONT = "bold 16px sans-serif";
@@ -1109,7 +1228,7 @@
     applyTextStyle(ctx);
     ctx.font = TITLE_FONT;
     ctx.textAlign = "center";
-    ctx.fillText(text, canvasWidth / 2, 14);
+    ctx.fillText(text, canvasWidth * 0.4, 14);
   }
   function clearAll(ctx, canvasWidth, canvasHeight) {
     ctx.clearRect(0, 0, canvasWidth, canvasHeight);
@@ -1202,8 +1321,8 @@
       if (value === 0) {
         return "";
       }
-      const lightness = 1 - value * 0.5;
-      const [r, g, b] = Color.hslToRgb(this.hue, Color.defaultSaturation, lightness);
+      const lightness = 1 - value * 1;
+      const [r, g, b] = Hue.hslToRgb(this.hue, Hue.defaultSaturation, lightness);
       return `rgb(${r}, ${g}, ${b})`;
     }
   };
@@ -1367,6 +1486,15 @@
   var ChartSections = class {
     sections;
     constructor() {
+      let geneCharts = [];
+      for (let i = 0; i < Individual.allChromosomes.length; i++) {
+        const chromosome = Individual.allChromosomes[i];
+        const chromosomeName = chromosome.chromosomeName;
+        for (let j = 0; j < chromosome.geneKeys.length; j++) {
+          const name = chromosome.geneKeys[j];
+          geneCharts.push(new MatrixChart(`gene-${name}-chart`, `${chromosomeName}: ${name}`, "Low", "High", Hue.blueHue, (m) => m.genetics.chromosomes[i].genes[j], true));
+        }
+      }
       this.sections = [
         {
           name: "Diet & actions",
@@ -1376,18 +1504,17 @@
               "Individuals per diet",
               9,
               (d) => d.dietDistribution.bucketCounts,
-              Color.greenToRedRange,
+              Hue.greenToRedRange,
               ["1 (herbivore)", "2", "3", "4", "5 (omnivore)", "6", "7", "8", "9 (carnivore)"]
             ),
             new StackedBarChart("action-breakdown-chart", "Actions", [
               { label: "Grow up", getValue: (d) => d.actions.growUp, color: Color.redPink },
-              { label: "Learn", getValue: (d) => d.actions.learn, color: Color.purple },
-              { label: "Reproduce", getValue: (d) => d.actions.reproduce, color: Color.blueSky },
+              { label: "Move", getValue: (d) => d.actions.move, color: Color.blue },
               { label: "Eat plant", getValue: (d) => d.actions.plantSearch, color: Color.green },
-              { label: "Eat meat", getValue: (d) => d.actions.hunt, color: Color.red }
+              { label: "Eat meat", getValue: (d) => d.actions.hunt, color: Color.red },
+              { label: "Reproduce", getValue: (d) => d.actions.reproduce, color: Color.blueSky }
             ]),
             new StackedBarChart("eat-plant-breakdown-chart", "Plant search outcome", [
-              { label: "Uneaten plants", getValue: (d) => d.food.remaining, color: Color.greenTeal },
               { label: "Plant found", getValue: (d) => d.actions.plantSearchSuccess, color: Color.green },
               { label: "Nothing found", getValue: (d) => d.actions.plantSearchFail, color: Color.redPink }
             ]),
@@ -1395,12 +1522,16 @@
               { label: "Prey escaped", getValue: (d) => d.actions.huntFail, color: Color.redPink },
               { label: "Prey caught", getValue: (d) => d.actions.huntSuccess, color: Color.red }
             ]),
+            new StackedBarChart("eaten-starved-chart", "Eaten vs starved", [
+              { label: "Eaten", getValue: (d) => d.population.eaten, color: Color.red },
+              { label: "Starved", getValue: (d) => d.population.starved, color: Color.purple }
+            ]),
             StackedBarChart.fromDistribution(
               "starved-chart",
               "Starved per diet",
               9,
               (d) => d.starvedDietDistribution.bucketCounts,
-              Color.greenToRedRange,
+              Hue.greenToRedRange,
               ["1 (herbivore)", "2", "3", "4", "5 (omnivore)", "6", "7", "8", "9 (carnivore)"]
             ),
             StackedBarChart.fromDistribution(
@@ -1408,22 +1539,14 @@
               "Eaten per diet",
               9,
               (d) => d.eatenDietDistribution.bucketCounts,
-              Color.greenToRedRange,
+              Hue.greenToRedRange,
               ["1 (herbivore)", "2", "3", "4", "5 (omnivore)", "6", "7", "8", "9 (carnivore)"]
             )
           ]
         },
         {
           name: "Gene pool",
-          charts: [
-            new MatrixChart("gene-survive-or-learn-chart-relative", "Behaviour: Survive or Learn", "Survive", "Learn", Color.purpleHue, (m) => m.genetics.surviveOrLearn, true),
-            new MatrixChart("gene-eat-or-reproduce-chart-relative", "Behaviour: Eat or Reproduce", "Eat", "Reproduce", Color.orangeHue, (m) => m.genetics.eatOrReproduce, true),
-            new MatrixChart("gene-plant-or-meat-chart-relative", "Diet: Plant or Meat", "Plant", "Meat", Color.blueHue, (m) => m.genetics.plantOrMeat, true),
-            new MatrixChart("gene-plant-search-skill-chart-relative", "Skill: Plant search", "Bad", "Good", Color.greenHue, (m) => m.genetics.plantSearchSkill, true),
-            new MatrixChart("gene-hunt-skill-chart-relative", "Skill: Hunt", "Bad", "Good", Color.redHue, (m) => m.genetics.huntSkill, true),
-            new MatrixChart("gene-alertness-trait-chart-relative", "Trait: Alertness", "Low", "High", Color.blueHue, (m) => m.genetics.alertnessTrait, true),
-            new MatrixChart("gene-size-trait-chart-relative", "Trait: Size", "Small", "Large", Color.yellowHue, (m) => m.genetics.sizeTrait, true)
-          ]
+          charts: geneCharts
         }
       ];
       this.buildDOM();
@@ -1461,6 +1584,133 @@
     }
   };
 
+  // src/ui/map.ts
+  var PIXEL_SIZE = 3;
+  var MapFrame = class {
+    canvas;
+    ctx;
+    imageData = null;
+    data = null;
+    canvasWidth = 0;
+    canvasHeight = 0;
+    constructor(container) {
+      this.canvas = document.createElement("canvas");
+      container.appendChild(this.canvas);
+      this.ctx = this.canvas.getContext("2d");
+    }
+    beginFrame(width, height) {
+      const dimensionsChanged = this.canvas.width !== width || this.canvas.height !== height;
+      if (dimensionsChanged) {
+        this.canvas.width = width;
+        this.canvas.height = height;
+        this.canvasWidth = width;
+        this.canvasHeight = height;
+        this.imageData = this.ctx.createImageData(width, height);
+        this.data = this.imageData.data;
+      }
+    }
+    setPixel(x, y, r, g, b) {
+      if (!this.data) return;
+      for (let px = 0; px < PIXEL_SIZE; px++) {
+        for (let py = 0; py < PIXEL_SIZE; py++) {
+          const index = ((y * PIXEL_SIZE + py) * this.canvasWidth + (x * PIXEL_SIZE + px)) * 4;
+          this.data[index] = r;
+          this.data[index + 1] = g;
+          this.data[index + 2] = b;
+          this.data[index + 3] = 255;
+        }
+      }
+    }
+    endFrame() {
+      if (this.imageData) {
+        this.ctx.putImageData(this.imageData, 0, 0);
+      }
+    }
+  };
+  var SimulationMap = class {
+    mapFrame;
+    colorMapping;
+    constructor(container, colorMapping2) {
+      this.mapFrame = new MapFrame(container);
+      this.colorMapping = colorMapping2;
+    }
+    update(space) {
+      const canvasWidth = space.width * PIXEL_SIZE;
+      const canvasHeight = space.height * PIXEL_SIZE;
+      this.mapFrame.beginFrame(canvasWidth, canvasHeight);
+      for (let x = 0; x < space.width; x++) {
+        for (let y = 0; y < space.height; y++) {
+          const { r, g, b } = this.colorMapping(space, x, y);
+          this.mapFrame.setPixel(x, y, r, g, b);
+        }
+      }
+      this.mapFrame.endFrame();
+    }
+  };
+
+  // src/ui/mapSections.ts
+  function densityColor(space, x, y, minMeat, maxMeat, highDenisty) {
+    const animalCount = space.animals[x][y].filter((individual) => individual.diet.meat.value >= minMeat && individual.diet.meat.value <= maxMeat).length;
+    if (animalCount === 0) return { r: 255, g: 255, b: 255 };
+    const density = Math.min(animalCount / highDenisty, 1);
+    const brightness = Math.floor(255 - density * 200);
+    return { r: brightness, g: brightness, b: 255 };
+  }
+  function meatColor(space, x, y, max) {
+    const animals = space.animals[x][y];
+    if (animals.length === 0) return { r: 255, g: 255, b: 255 };
+    let meat = max ? 0 : 1;
+    for (const individual of animals) {
+      if (max) {
+        if (individual.diet.meat.value > meat) {
+          meat = individual.diet.meat.value;
+        }
+      } else {
+        if (individual.diet.meat.value < meat) {
+          meat = individual.diet.meat.value;
+        }
+      }
+    }
+    const plant = 1 - meat;
+    return { r: Math.floor(meat * 255), g: Math.floor(plant * 255), b: 0 };
+  }
+  function plantsColor(space, x, y) {
+    const brightness = Math.floor(255 - space.plants[x][y] * 150);
+    return { r: brightness, g: 255, b: brightness };
+  }
+  var MAP_CONFIGS = [
+    { label: "Plants", colorMapping: plantsColor },
+    { label: "Density", colorMapping: (space, x, y) => densityColor(space, x, y, 0, 1, 3) },
+    { label: "Herbivore density", colorMapping: (space, x, y) => densityColor(space, x, y, 0, 1 / 3, 2) },
+    { label: "Omnivore density", colorMapping: (space, x, y) => densityColor(space, x, y, 1 / 3, 2 / 3, 2) },
+    { label: "Carnivore density", colorMapping: (space, x, y) => densityColor(space, x, y, 2 / 3, 1, 2) },
+    { label: "Maximum carni omni herbi-vore (red brown green)", colorMapping: (space, x, y) => meatColor(space, x, y, true) }
+  ];
+  var MapSections = class {
+    maps;
+    constructor() {
+      this.maps = [];
+      this.buildDOM();
+    }
+    buildDOM() {
+      const container = document.getElementById("maps");
+      for (const config of MAP_CONFIGS) {
+        const mapContainer = document.createElement("div");
+        mapContainer.className = "map-container";
+        const label = document.createElement("p");
+        label.textContent = config.label;
+        mapContainer.appendChild(label);
+        container.appendChild(mapContainer);
+        this.maps.push(new SimulationMap(mapContainer, config.colorMapping));
+      }
+    }
+    update(space) {
+      for (const map of this.maps) {
+        map.update(space);
+      }
+    }
+  };
+
   // src/ui/ui.ts
   window.onload = () => new UI();
   var UI = class {
@@ -1468,13 +1718,14 @@
     iterations;
     loop;
     charts;
-    showedSimulationEndAlert = false;
+    maps;
     constructor() {
       this.state = new State();
       this.iterations = new Iterations(this.state);
       this.loop = new IterationLoop(this.iterations, this);
       this.loop.onUpdate = () => this.updateUI();
       this.charts = new ChartSections();
+      this.maps = new MapSections();
       this.initSliders();
       this.initButtons();
       this.updateUI();
@@ -1485,9 +1736,8 @@
     }
     initJumpsPerSecSlider() {
       const min = 5;
-      const max = 30;
+      const max = 40;
       const step = 5;
-      const defaultValue = 20;
       const slider = document.getElementById("jumps-per-sec");
       slider.min = String(min);
       slider.max = String(max);
@@ -1501,8 +1751,8 @@
       });
     }
     initIterationsPerJumpSlider() {
-      const options = [5, 10, 25, 50, 100, 200, 300];
-      const defaultIndex = 2;
+      const options = [1, 2, 5, 10, 25, 50];
+      const defaultIndex = options.indexOf(this.loop.iterationsPerJump);
       const min = 0;
       const max = options.length - 1;
       const slider = document.getElementById("iterations-per-jump");
@@ -1534,12 +1784,12 @@
     }
     jump(iterations) {
       const continueLoop = this.iterations.execute(iterations);
-      console.log(`Jumped ${iterations} iterations. All dead: ${!continueLoop}`);
       if (!continueLoop) {
         this.handleSimulationEnd();
       }
       this.updateUI();
     }
+    showedSimulationEndAlert = false;
     handleSimulationEnd() {
       if (this.loop.isPlaying) {
         this.togglePlay();
@@ -1556,6 +1806,7 @@
     updateUI() {
       document.getElementById("iteration-title").innerText = `Iteration ${this.state.day}`;
       document.getElementById("play-btn").textContent = this.loop.isPlaying ? "\u23F8 Pause" : "\u25B6 Play";
+      this.maps.update(this.state.space);
       this.charts.update(this.state.metrics.flush());
     }
   };

@@ -64,8 +64,8 @@ class HuntAction extends Action {
         this.victim = this.possibleVictims[Math.floor(Math.random() * this.possibleVictims.length)];
         if (!this.victim.canBeHuntedBy(this.individual, state.day)) {
             console.error(`Victim ${this.victim.id} is no longer a valid victim for hunter ${this.individual.id}`);
-            console.log(this.victim);
-            console.log(this.individual);
+            console.log("Debug:", this.victim);
+            console.log("Debug:", this.individual);
             return;
         }
         if (this.victim.traits.canEscape(this.individual.traits)) {
@@ -103,7 +103,7 @@ class ScavengeAction extends Action {
         this.bodyId = state.environment.allBodies[Math.floor(Math.random() * state.environment.allBodies.length)];
         const nutritionalValue = state.individuals[this.bodyId].traits.nutritionalValue;
         this.individual.eat(nutritionalValue);
-        state.environment.removeBody(this.bodyId);
+        state.environment.removeOrgans(this.bodyId);
     }
     toString() {
         return `${leftShelterSymbol(this.leftShelter)}🦴 ${this.bodyId}`;

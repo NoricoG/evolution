@@ -1,33 +1,34 @@
-import { Chromosome } from "@simulation/genetics/chromosome.js";
+import { RelativeChromosome } from "@simulation/genetics/chromosome.js";
 import { Gene } from "@simulation/genetics/gene.js";
 
 export enum BrainGenes {
-    SurviveOrLearn = "SurviveOrLearn",
-    EatOrReproduce = "EatOrReproduce",
-    PlantOrMeat = "PlantOrMeat",
+    Move = "Move",
+    Eat = "Eat",
+    Reproduce = "Reproduce",
 }
 
-export class Brain extends Chromosome {
+export class Brain extends RelativeChromosome {
 
+    static readonly chromosomeName = "Brain";
     static readonly geneKeys = Object.values(BrainGenes);
 
     static neutral(): Brain {
         const neutralGenes: Record<string, Gene> = {};
-        neutralGenes[BrainGenes.SurviveOrLearn] = new Gene(1 / 9);
-        neutralGenes[BrainGenes.PlantOrMeat] = new Gene(3 / 9);
-        neutralGenes[BrainGenes.EatOrReproduce] = new Gene(3 / 9);
+        neutralGenes[BrainGenes.Move] = new Gene(2 / 9);
+        neutralGenes[BrainGenes.Eat] = new Gene(5 / 9);
+        neutralGenes[BrainGenes.Reproduce] = new Gene(2 / 9);
         return new Brain(neutralGenes);
     }
 
-    get surviveOrLearn(): Gene {
-        return this.genes[BrainGenes.SurviveOrLearn];
+    get move(): Gene {
+        return this.genes[BrainGenes.Move];
     }
 
-    get plantOrMeat(): Gene {
-        return this.genes[BrainGenes.PlantOrMeat];
+    get eat(): Gene {
+        return this.genes[BrainGenes.Eat];
     }
 
-    get eatOrReproduce(): Gene {
-        return this.genes[BrainGenes.EatOrReproduce];
+    get reproduce(): Gene {
+        return this.genes[BrainGenes.Reproduce];
     }
 }

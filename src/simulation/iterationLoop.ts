@@ -5,8 +5,9 @@ export class IterationLoop {
     readonly iterations: Iterations;
     readonly ui: UI
 
-    jumpsPerSecond = 20;
-    iterationsPerJump = 30;
+    // defaults
+    jumpsPerSecond = 30;
+    iterationsPerJump = 2;
 
     private playInterval: ReturnType<typeof setInterval> | undefined = undefined;
 

@@ -98,7 +98,7 @@ function valuesForIndividual(individual, includeDeath) {
     Object.entries(values).forEach(([key, value]) => {
         if (value === undefined) {
             console.error(`Value for ${key} is undefined for individual ${individual.id}`);
-            console.log(individual);
+            console.log("Debug:", individual);
         }
     });
     return values;

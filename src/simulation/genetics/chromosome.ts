@@ -2,6 +2,7 @@ import { Gene } from "@simulation/genetics/gene.js";
 
 export class Chromosome {
 
+    static readonly chromosomeName: string = "";
     static readonly geneKeys: string[] = [];
 
     readonly genes: { [key: string]: Gene };
@@ -32,3 +33,26 @@ export class Chromosome {
         return totalSteps <= maxTotalSteps;
     }
 };
+
+
+export class RelativeChromosome extends Chromosome {
+    constructor(genes: { [key: string]: Gene }) {
+        super(genes);
+        this.scaleGenes();
+    }
+
+    private scaleGenes() {
+        const totalValue = Object.values(this.genes).reduce((sum, gene) => sum + gene.value, 0);
+        if (totalValue === 0) {
+            const equalValue = 1 / Object.keys(this.genes).length;
+            for (const key of Object.keys(this.genes)) {
+                this.genes[key] = new Gene(equalValue);
+            }
+        } else {
+            for (const key of Object.keys(this.genes)) {
+                const gene = this.genes[key];
+                this.genes[key] = new Gene(gene.value / totalValue);
+            }
+        }
+    }
+}

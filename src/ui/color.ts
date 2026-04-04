@@ -1,4 +1,4 @@
-import { Brain } from "@simulation/genetics/brain.js";
+import { Diet } from "@simulation/genetics/diet.js";
 
 export class Color {
 
@@ -12,13 +12,19 @@ export class Color {
 
     static purple = "rgb(167, 139, 250)";         // violet-400
 
+    static rgbToRgba(rgb: string, alpha: number): string {
+        return rgb.replace("rgb(", "rgba(").replace(")", `, ${alpha.toFixed(2)})`);
+    }
+}
+
+export class Hue {
     static greenHue = 140 / 360;
     static blueHue = 220 / 360;
     static redHue = 0 / 360;
     static purpleHue = 270 / 360;
     static orangeHue = 30 / 360;
     static yellowHue = 55 / 360;
-    static defaultSaturation = 1.0;
+    static defaultSaturation = 0.5;
 
     static greenToRedRange = this.hueRange(this.greenHue, this.redHue, 9, 0.9, 0.4);
 
@@ -26,13 +32,9 @@ export class Color {
         return Array.from({ length: steps }, (_, i) => {
             const huePerStep = steps > 1 ? i / (steps - 1) : 0;
             const hue = fromHue + huePerStep * (toHue - fromHue);
-            const [r, g, b] = Color.hslToRgb(hue, saturation, luminance);
+            const [r, g, b] = Hue.hslToRgb(hue, saturation, luminance);
             return `rgb(${r}, ${g}, ${b})`;
         });
-    }
-
-    static rgbToRgba(rgb: string, alpha: number): string {
-        return rgb.replace("rgb(", "rgba(").replace(")", `, ${alpha.toFixed(2)})`);
     }
 
     static hslToRgb(h: number, s: number, l: number): [number, number, number] {
@@ -44,9 +46,8 @@ export class Color {
         return [Math.round(f(0) * 255), Math.round(f(8) * 255), Math.round(f(4) * 255)];
     }
 
-    static genomeToColor(brain: Brain): string {
-        // 0 = plant (herbivore/green), 1 = meat (carnivore/red)
-        const herbivoreValue = 1 - brain.plantOrMeat.value;
+    static genomeToColor(diet: Diet): string {
+        const herbivoreValue = diet.meat.value;
 
         // minValue is mapped to red (hue 0), maxValue is mapped to green (hue 130)
         // inbetween is scaled linearly
@@ -56,12 +57,13 @@ export class Color {
 
         const hue = (clampedHerbivoreValue - minValue) / (maxValue - minValue) * 130;
 
-        const eatValue = 1 - brain.surviveOrLearn.value;
+        // const eatValue = 1 - brain.surviveOrLearn.value;
+        const eatValue = 0.8;
         const saturation = 0.5 + eatValue / 2;
 
         const lightness = 0.6;
 
-        const [r, g, b] = Color.hslToRgb(hue / 360, saturation, lightness);
+        const [r, g, b] = Hue.hslToRgb(hue / 360, saturation, lightness);
         return `rgb(${r}, ${g}, ${b})`;
     }
 }
